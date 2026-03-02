@@ -57,6 +57,10 @@ UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 # Maps pipeline_id → {status, result, ...}
 _pipelines: Dict[str, Dict[str, Any]] = {}
 
+# In-memory company store: name (normalized) → company_id
+_company_name_to_id: Dict[str, str] = {}
+_company_id_to_name: Dict[str, str] = {}
+
 VERSION = "1.0.0"
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -83,6 +87,25 @@ def startup_event():
     print(f"[galleon] API v{VERSION} starting — DB connected: {connected}")
 
 
+# ── Debug (temporary) ────────────────────────────────────────────────────────
+
+@app.get("/debug/pipelines", tags=["debug"])
+def debug_pipelines():
+    out = {}
+    for pid, mem in _pipelines.items():
+        result = mem.get("result")
+        bv = result.get("best_values") if result else None
+        out[pid] = {
+            "status": mem.get("status"),
+            "company_id": mem.get("company_id"),
+            "has_result": result is not None,
+            "best_values_count": len(bv) if bv else 0,
+            "first_bv_key": next(iter(bv), None) if bv else None,
+            "first_bv_raw_value": next(iter(bv.values()), {}).get("raw_value") if bv else None,
+        }
+    return out
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthOut, tags=["health"])
@@ -100,17 +123,42 @@ def health():
 @app.get("/companies", response_model=List[CompanySummary], tags=["companies"])
 def list_companies():
     rows = db.list_companies()
-    return [
-        CompanySummary(
-            id=str(r["id"]),
-            name=r.get("canonical_name", ""),
-            sector=r.get("sector"),
-            completeness=float(r["completeness_pct"]) if r.get("completeness_pct") else None,
-            conflicts=int(r.get("conflicts", 0)),
-            last_run=str(r["last_run"]) if r.get("last_run") else None,
+    if rows:
+        return [
+            CompanySummary(
+                id=str(r["id"]),
+                name=r.get("canonical_name", ""),
+                sector=r.get("sector"),
+                completeness=float(r["completeness_pct"]) if r.get("completeness_pct") else None,
+                conflicts=int(r.get("conflicts", 0)),
+                last_run=str(r["last_run"]) if r.get("last_run") else None,
+            )
+            for r in rows
+        ]
+    # In-memory fallback: one entry per unique company seen in _pipelines
+    seen: dict[str, dict] = {}
+    for mem in _pipelines.values():
+        cid = mem.get("company_id")
+        if not cid or cid in seen:
+            continue
+        result = mem.get("result", {})
+        summary = result.get("summary", {})
+        bv = result.get("best_values", {})
+        name = (
+            bv.get("company_name", {}).get("value")
+            or bv.get("borrower_name", {}).get("value")
+            or _company_id_to_name.get(cid)
+            or (Path(mem["pdf_path"]).stem if "pdf_path" in mem else cid)
         )
-        for r in rows
-    ]
+        seen[cid] = CompanySummary(
+            id=cid,
+            name=str(name),
+            sector=bv.get("sector", {}).get("value"),
+            completeness=None,
+            conflicts=int(summary.get("conflicts_detected", 0)),
+            last_run=mem.get("started_at"),
+        )
+    return list(seen.values())
 
 
 @app.post("/companies", response_model=CompanyOut, status_code=201, tags=["companies"])
@@ -140,7 +188,43 @@ def get_company(company_id: str):
 @app.get("/companies/{company_id}/fields", response_model=List[FieldValueOut], tags=["companies"])
 def get_company_fields(company_id: str, category: Optional[str] = None):
     fields = db.get_company_fields(company_id, category)
-    return [_field_row_to_out(f) for f in fields]
+    if fields:
+        return [_field_row_to_out(f) for f in fields]
+    # In-memory fallback: pull best_values from the most recent completed pipeline for this company
+    best_result = None
+    for mem in reversed(list(_pipelines.values())):
+        if mem.get("company_id") == company_id and mem.get("status") == "complete" and mem.get("result"):
+            best_result = mem["result"]
+            break
+    if not best_result:
+        return []
+    out = []
+    for field_name, fdata in best_result.get("best_values", {}).items():
+        if not isinstance(fdata, dict):
+            continue
+        if category and fdata.get("field_category") != category:
+            continue
+        # best_values already uses FieldValueOut's field names — pass through directly
+        out.append(FieldValueOut(
+            id=str(uuid.uuid4()),
+            field_name=fdata.get("field_name", field_name),
+            field_category=fdata.get("field_category") or "general",
+            raw_value=fdata.get("raw_value"),
+            normalized_value=fdata.get("normalized_value"),
+            numeric_value=fdata.get("numeric_value"),
+            currency=fdata.get("currency"),
+            unit=fdata.get("unit"),
+            source_type=fdata.get("source_type", "extraction"),
+            source_document=fdata.get("source_document"),
+            source_page=fdata.get("source_page"),
+            source_section=fdata.get("source_section"),
+            source_snippet=fdata.get("source_snippet"),
+            extraction_method=fdata.get("extraction_method") or "pattern_match",
+            confidence_score=float(fdata.get("confidence_score") or 0.0),
+            rule_id=fdata.get("rule_id"),
+            status=fdata.get("status", "extracted"),
+        ))
+    return out
 
 
 @app.get("/companies/{company_id}/profile", tags=["companies"])
@@ -238,7 +322,24 @@ async def upload_document(
 @app.get("/documents", response_model=List[DocumentOut], tags=["documents"])
 def list_documents():
     rows = db.list_documents()
-    return [_doc_row_to_out(r) for r in rows]
+    if rows:
+        return [_doc_row_to_out(r) for r in rows]
+    # In-memory fallback: synthesize from _pipelines when DB is unavailable
+    out = []
+    for mem in _pipelines.values():
+        if "pdf_path" not in mem:
+            continue
+        result = mem.get("result", {})
+        summary = result.get("summary", {})
+        out.append(DocumentOut(
+            id=mem.get("document_id", mem["pipeline_id"]),
+            filename=Path(mem["pdf_path"]).name,
+            company=_company_id_to_name.get(mem.get("company_id", "")) or None,
+            status=mem["status"],
+            fields_extracted=int(summary.get("fields_in_best") or 0),
+            created_at=mem.get("started_at", datetime.utcnow().isoformat()),
+        ))
+    return out
 
 
 @app.get("/documents/{document_id}", tags=["documents"])
@@ -587,8 +688,17 @@ def _resolve_or_create_company(name: str) -> Optional[str]:
     except Exception as exc:
         print(f"[entity] Resolver failed: {exc}")
 
-    # Create new company
-    return db.upsert_company(name)
+    # Create new company (or generate in-memory ID if DB unavailable)
+    db_id = db.upsert_company(name)
+    if db_id:
+        return db_id
+    # No DB — maintain a simple in-memory name→id map so the same name reuses the same UUID
+    key = name.lower().strip()
+    if key not in _company_name_to_id:
+        new_id = str(uuid.uuid4())
+        _company_name_to_id[key] = new_id
+        _company_id_to_name[new_id] = name
+    return _company_name_to_id[key]
 
 
 # ── Serialisation helpers ─────────────────────────────────────────────────────
