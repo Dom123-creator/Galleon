@@ -1,6 +1,6 @@
 {
   "meta": {
-    "run_date": "2026-03-02T18:10:52.214568",
+    "run_date": "2026-03-02T18:42:17.989396",
     "mode": "offline",
     "source_bdc": "ARCC \u2014 Ares Capital Corporation",
     "edgar_cik": "0001287750",
@@ -28,17 +28,17 @@
         "sector": "Software"
       },
       "ground_truth": {
-        "pct_net_assets": 2.14,
-        "fair_value_usd": 142300000,
+        "floor": "100 bps",
         "company_name": "Clearview Capital Group LLC",
+        "security_type": "Floating Rate Loan",
+        "facility_type": "First Lien Senior Secured",
+        "pct_net_assets": 2.14,
         "maturity_date": "2029-03-15",
         "cost_basis_usd": 143000000,
+        "fair_value_usd": 142300000,
         "pricing_spread": "SOFR + 525 bps",
-        "security_type": "Floating Rate Loan",
         "non_accrual": false,
-        "pik_rate": null,
-        "floor": "100 bps",
-        "facility_type": "First Lien Senior Secured"
+        "pik_rate": null
       },
       "galleon_targets": {
         "revenue_ttm": null,
@@ -173,19 +173,29 @@
         "fields_total": 11,
         "fields_matched": 0,
         "field_results": {
-          "pct_net_assets": {
+          "floor": {
             "status": "missing",
-            "gt": 2.14,
-            "extracted": null
-          },
-          "fair_value_usd": {
-            "status": "missing",
-            "gt": 142300000,
+            "gt": "100 bps",
             "extracted": null
           },
           "company_name": {
             "status": "missing",
             "gt": "Clearview Capital Group LLC",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "First Lien Senior Secured",
+            "extracted": null
+          },
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 2.14,
             "extracted": null
           },
           "maturity_date": {
@@ -198,14 +208,14 @@
             "gt": 143000000,
             "extracted": null
           },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 142300000,
+            "extracted": null
+          },
           "pricing_spread": {
             "status": "missing",
             "gt": "SOFR + 525 bps",
-            "extracted": null
-          },
-          "security_type": {
-            "status": "missing",
-            "gt": "Floating Rate Loan",
             "extracted": null
           },
           "non_accrual": {
@@ -216,16 +226,6 @@
           "pik_rate": {
             "status": "missing",
             "gt": null,
-            "extracted": null
-          },
-          "floor": {
-            "status": "missing",
-            "gt": "100 bps",
-            "extracted": null
-          },
-          "facility_type": {
-            "status": "missing",
-            "gt": "First Lien Senior Secured",
             "extracted": null
           }
         }
@@ -241,17 +241,17 @@
         "sector": "Business Services"
       },
       "ground_truth": {
-        "pct_net_assets": 1.48,
-        "fair_value_usd": 98500000,
+        "floor": "75 bps",
         "company_name": "Apex Industrial Services Inc.",
+        "security_type": "Floating Rate Loan",
+        "facility_type": "First Lien Senior Secured",
+        "pct_net_assets": 1.48,
         "maturity_date": "2028-09-30",
         "cost_basis_usd": 100000000,
+        "fair_value_usd": 98500000,
         "pricing_spread": "SOFR + 575 bps",
-        "security_type": "Floating Rate Loan",
         "non_accrual": false,
-        "pik_rate": null,
-        "floor": "75 bps",
-        "facility_type": "First Lien Senior Secured"
+        "pik_rate": null
       },
       "galleon_targets": {
         "revenue_ttm": null,
@@ -386,19 +386,29 @@
         "fields_total": 11,
         "fields_matched": 0,
         "field_results": {
-          "pct_net_assets": {
+          "floor": {
             "status": "missing",
-            "gt": 1.48,
-            "extracted": null
-          },
-          "fair_value_usd": {
-            "status": "missing",
-            "gt": 98500000,
+            "gt": "75 bps",
             "extracted": null
           },
           "company_name": {
             "status": "missing",
             "gt": "Apex Industrial Services Inc.",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "First Lien Senior Secured",
+            "extracted": null
+          },
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 1.48,
             "extracted": null
           },
           "maturity_date": {
@@ -411,14 +421,14 @@
             "gt": 100000000,
             "extracted": null
           },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 98500000,
+            "extracted": null
+          },
           "pricing_spread": {
             "status": "missing",
             "gt": "SOFR + 575 bps",
-            "extracted": null
-          },
-          "security_type": {
-            "status": "missing",
-            "gt": "Floating Rate Loan",
             "extracted": null
           },
           "non_accrual": {
@@ -429,16 +439,6 @@
           "pik_rate": {
             "status": "missing",
             "gt": null,
-            "extracted": null
-          },
-          "floor": {
-            "status": "missing",
-            "gt": "75 bps",
-            "extracted": null
-          },
-          "facility_type": {
-            "status": "missing",
-            "gt": "First Lien Senior Secured",
             "extracted": null
           }
         }
@@ -454,17 +454,17 @@
         "sector": "Healthcare Services"
       },
       "ground_truth": {
-        "pct_net_assets": 3.23,
-        "fair_value_usd": 215000000,
+        "floor": "100 bps",
         "company_name": "Meridian Healthcare Holdings LLC",
+        "security_type": "Floating Rate Loan",
+        "facility_type": "Unitranche",
+        "pct_net_assets": 3.23,
         "maturity_date": "2030-06-30",
         "cost_basis_usd": 220000000,
+        "fair_value_usd": 215000000,
         "pricing_spread": "SOFR + 650 bps",
-        "security_type": "Floating Rate Loan",
         "non_accrual": false,
-        "pik_rate": "200 bps",
-        "floor": "100 bps",
-        "facility_type": "Unitranche"
+        "pik_rate": "200 bps"
       },
       "galleon_targets": {
         "revenue_ttm": null,
@@ -599,19 +599,29 @@
         "fields_total": 11,
         "fields_matched": 0,
         "field_results": {
-          "pct_net_assets": {
+          "floor": {
             "status": "missing",
-            "gt": 3.23,
-            "extracted": null
-          },
-          "fair_value_usd": {
-            "status": "missing",
-            "gt": 215000000,
+            "gt": "100 bps",
             "extracted": null
           },
           "company_name": {
             "status": "missing",
             "gt": "Meridian Healthcare Holdings LLC",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "Unitranche",
+            "extracted": null
+          },
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 3.23,
             "extracted": null
           },
           "maturity_date": {
@@ -624,14 +634,14 @@
             "gt": 220000000,
             "extracted": null
           },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 215000000,
+            "extracted": null
+          },
           "pricing_spread": {
             "status": "missing",
             "gt": "SOFR + 650 bps",
-            "extracted": null
-          },
-          "security_type": {
-            "status": "missing",
-            "gt": "Floating Rate Loan",
             "extracted": null
           },
           "non_accrual": {
@@ -642,16 +652,6 @@
           "pik_rate": {
             "status": "missing",
             "gt": "200 bps",
-            "extracted": null
-          },
-          "floor": {
-            "status": "missing",
-            "gt": "100 bps",
-            "extracted": null
-          },
-          "facility_type": {
-            "status": "missing",
-            "gt": "Unitranche",
             "extracted": null
           }
         }
@@ -667,17 +667,17 @@
         "sector": "Transportation"
       },
       "ground_truth": {
-        "pct_net_assets": 1.01,
-        "fair_value_usd": 67200000,
+        "floor": "150 bps",
         "company_name": "Summit Logistics Partners LP",
+        "security_type": "Floating Rate Loan",
+        "facility_type": "Second Lien Senior Secured",
+        "pct_net_assets": 1.01,
         "maturity_date": "2027-12-31",
         "cost_basis_usd": 75000000,
+        "fair_value_usd": 67200000,
         "pricing_spread": "SOFR + 875 bps",
-        "security_type": "Floating Rate Loan",
         "non_accrual": true,
-        "pik_rate": null,
-        "floor": "150 bps",
-        "facility_type": "Second Lien Senior Secured"
+        "pik_rate": null
       },
       "galleon_targets": {
         "revenue_ttm": null,
@@ -812,19 +812,29 @@
         "fields_total": 11,
         "fields_matched": 0,
         "field_results": {
-          "pct_net_assets": {
+          "floor": {
             "status": "missing",
-            "gt": 1.01,
-            "extracted": null
-          },
-          "fair_value_usd": {
-            "status": "missing",
-            "gt": 67200000,
+            "gt": "150 bps",
             "extracted": null
           },
           "company_name": {
             "status": "missing",
             "gt": "Summit Logistics Partners LP",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "Second Lien Senior Secured",
+            "extracted": null
+          },
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 1.01,
             "extracted": null
           },
           "maturity_date": {
@@ -837,14 +847,14 @@
             "gt": 75000000,
             "extracted": null
           },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 67200000,
+            "extracted": null
+          },
           "pricing_spread": {
             "status": "missing",
             "gt": "SOFR + 875 bps",
-            "extracted": null
-          },
-          "security_type": {
-            "status": "missing",
-            "gt": "Floating Rate Loan",
             "extracted": null
           },
           "non_accrual": {
@@ -855,16 +865,6 @@
           "pik_rate": {
             "status": "missing",
             "gt": null,
-            "extracted": null
-          },
-          "floor": {
-            "status": "missing",
-            "gt": "150 bps",
-            "extracted": null
-          },
-          "facility_type": {
-            "status": "missing",
-            "gt": "Second Lien Senior Secured",
             "extracted": null
           }
         }
@@ -880,17 +880,17 @@
         "sector": "Technology"
       },
       "ground_truth": {
-        "pct_net_assets": 5.02,
-        "fair_value_usd": 334000000,
+        "floor": "75 bps",
         "company_name": "Vantage Software Solutions Inc.",
+        "security_type": "Floating Rate Loan",
+        "facility_type": "First Lien Senior Secured",
+        "pct_net_assets": 5.02,
         "maturity_date": "2030-03-31",
         "cost_basis_usd": 335000000,
+        "fair_value_usd": 334000000,
         "pricing_spread": "SOFR + 500 bps",
-        "security_type": "Floating Rate Loan",
         "non_accrual": false,
-        "pik_rate": null,
-        "floor": "75 bps",
-        "facility_type": "First Lien Senior Secured"
+        "pik_rate": null
       },
       "galleon_targets": {
         "revenue_ttm": null,
@@ -1025,19 +1025,29 @@
         "fields_total": 11,
         "fields_matched": 0,
         "field_results": {
-          "pct_net_assets": {
+          "floor": {
             "status": "missing",
-            "gt": 5.02,
-            "extracted": null
-          },
-          "fair_value_usd": {
-            "status": "missing",
-            "gt": 334000000,
+            "gt": "75 bps",
             "extracted": null
           },
           "company_name": {
             "status": "missing",
             "gt": "Vantage Software Solutions Inc.",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "First Lien Senior Secured",
+            "extracted": null
+          },
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 5.02,
             "extracted": null
           },
           "maturity_date": {
@@ -1050,14 +1060,14 @@
             "gt": 335000000,
             "extracted": null
           },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 334000000,
+            "extracted": null
+          },
           "pricing_spread": {
             "status": "missing",
             "gt": "SOFR + 500 bps",
-            "extracted": null
-          },
-          "security_type": {
-            "status": "missing",
-            "gt": "Floating Rate Loan",
             "extracted": null
           },
           "non_accrual": {
@@ -1068,16 +1078,6 @@
           "pik_rate": {
             "status": "missing",
             "gt": null,
-            "extracted": null
-          },
-          "floor": {
-            "status": "missing",
-            "gt": "75 bps",
-            "extracted": null
-          },
-          "facility_type": {
-            "status": "missing",
-            "gt": "First Lien Senior Secured",
             "extracted": null
           }
         }
@@ -1093,17 +1093,17 @@
         "sector": "Environmental Services"
       },
       "ground_truth": {
-        "pct_net_assets": 1.32,
-        "fair_value_usd": 88100000,
+        "floor": "100 bps",
         "company_name": "Bluewater Environmental Group LLC",
+        "security_type": "Floating Rate Loan",
+        "facility_type": "First Lien Senior Secured",
+        "pct_net_assets": 1.32,
         "maturity_date": "2029-09-30",
         "cost_basis_usd": 90000000,
+        "fair_value_usd": 88100000,
         "pricing_spread": "SOFR + 600 bps",
-        "security_type": "Floating Rate Loan",
         "non_accrual": false,
-        "pik_rate": null,
-        "floor": "100 bps",
-        "facility_type": "First Lien Senior Secured"
+        "pik_rate": null
       },
       "galleon_targets": {
         "revenue_ttm": null,
@@ -1238,19 +1238,29 @@
         "fields_total": 11,
         "fields_matched": 0,
         "field_results": {
-          "pct_net_assets": {
+          "floor": {
             "status": "missing",
-            "gt": 1.32,
-            "extracted": null
-          },
-          "fair_value_usd": {
-            "status": "missing",
-            "gt": 88100000,
+            "gt": "100 bps",
             "extracted": null
           },
           "company_name": {
             "status": "missing",
             "gt": "Bluewater Environmental Group LLC",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "First Lien Senior Secured",
+            "extracted": null
+          },
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 1.32,
             "extracted": null
           },
           "maturity_date": {
@@ -1263,14 +1273,14 @@
             "gt": 90000000,
             "extracted": null
           },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 88100000,
+            "extracted": null
+          },
           "pricing_spread": {
             "status": "missing",
             "gt": "SOFR + 600 bps",
-            "extracted": null
-          },
-          "security_type": {
-            "status": "missing",
-            "gt": "Floating Rate Loan",
             "extracted": null
           },
           "non_accrual": {
@@ -1281,16 +1291,6 @@
           "pik_rate": {
             "status": "missing",
             "gt": null,
-            "extracted": null
-          },
-          "floor": {
-            "status": "missing",
-            "gt": "100 bps",
-            "extracted": null
-          },
-          "facility_type": {
-            "status": "missing",
-            "gt": "First Lien Senior Secured",
             "extracted": null
           }
         }
@@ -1306,17 +1306,17 @@
         "sector": "Construction"
       },
       "ground_truth": {
-        "pct_net_assets": 1.83,
-        "fair_value_usd": 121500000,
+        "floor": "125 bps",
         "company_name": "Granite Construction Holdings Inc.",
+        "security_type": "Floating Rate Loan",
+        "facility_type": "Unitranche",
+        "pct_net_assets": 1.83,
         "maturity_date": "2028-12-31",
         "cost_basis_usd": 125000000,
+        "fair_value_usd": 121500000,
         "pricing_spread": "SOFR + 700 bps",
-        "security_type": "Floating Rate Loan",
         "non_accrual": false,
-        "pik_rate": "150 bps",
-        "floor": "125 bps",
-        "facility_type": "Unitranche"
+        "pik_rate": "150 bps"
       },
       "galleon_targets": {
         "revenue_ttm": null,
@@ -1451,19 +1451,29 @@
         "fields_total": 11,
         "fields_matched": 0,
         "field_results": {
-          "pct_net_assets": {
+          "floor": {
             "status": "missing",
-            "gt": 1.83,
-            "extracted": null
-          },
-          "fair_value_usd": {
-            "status": "missing",
-            "gt": 121500000,
+            "gt": "125 bps",
             "extracted": null
           },
           "company_name": {
             "status": "missing",
             "gt": "Granite Construction Holdings Inc.",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "Unitranche",
+            "extracted": null
+          },
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 1.83,
             "extracted": null
           },
           "maturity_date": {
@@ -1476,14 +1486,14 @@
             "gt": 125000000,
             "extracted": null
           },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 121500000,
+            "extracted": null
+          },
           "pricing_spread": {
             "status": "missing",
             "gt": "SOFR + 700 bps",
-            "extracted": null
-          },
-          "security_type": {
-            "status": "missing",
-            "gt": "Floating Rate Loan",
             "extracted": null
           },
           "non_accrual": {
@@ -1494,16 +1504,6 @@
           "pik_rate": {
             "status": "missing",
             "gt": "150 bps",
-            "extracted": null
-          },
-          "floor": {
-            "status": "missing",
-            "gt": "125 bps",
-            "extracted": null
-          },
-          "facility_type": {
-            "status": "missing",
-            "gt": "Unitranche",
             "extracted": null
           }
         }
@@ -1519,17 +1519,17 @@
         "sector": "Aerospace & Defense"
       },
       "ground_truth": {
-        "pct_net_assets": 2.65,
-        "fair_value_usd": 176000000,
+        "floor": "100 bps",
         "company_name": "Cascade Aerospace Components LLC",
+        "security_type": "Floating Rate Loan",
+        "facility_type": "First Lien Senior Secured",
+        "pct_net_assets": 2.65,
         "maturity_date": "2030-06-30",
         "cost_basis_usd": 177500000,
+        "fair_value_usd": 176000000,
         "pricing_spread": "SOFR + 550 bps",
-        "security_type": "Floating Rate Loan",
         "non_accrual": false,
-        "pik_rate": null,
-        "floor": "100 bps",
-        "facility_type": "First Lien Senior Secured"
+        "pik_rate": null
       },
       "galleon_targets": {
         "revenue_ttm": null,
@@ -1664,19 +1664,29 @@
         "fields_total": 11,
         "fields_matched": 0,
         "field_results": {
-          "pct_net_assets": {
+          "floor": {
             "status": "missing",
-            "gt": 2.65,
-            "extracted": null
-          },
-          "fair_value_usd": {
-            "status": "missing",
-            "gt": 176000000,
+            "gt": "100 bps",
             "extracted": null
           },
           "company_name": {
             "status": "missing",
             "gt": "Cascade Aerospace Components LLC",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "First Lien Senior Secured",
+            "extracted": null
+          },
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 2.65,
             "extracted": null
           },
           "maturity_date": {
@@ -1689,14 +1699,14 @@
             "gt": 177500000,
             "extracted": null
           },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 176000000,
+            "extracted": null
+          },
           "pricing_spread": {
             "status": "missing",
             "gt": "SOFR + 550 bps",
-            "extracted": null
-          },
-          "security_type": {
-            "status": "missing",
-            "gt": "Floating Rate Loan",
             "extracted": null
           },
           "non_accrual": {
@@ -1707,16 +1717,6 @@
           "pik_rate": {
             "status": "missing",
             "gt": null,
-            "extracted": null
-          },
-          "floor": {
-            "status": "missing",
-            "gt": "100 bps",
-            "extracted": null
-          },
-          "facility_type": {
-            "status": "missing",
-            "gt": "First Lien Senior Secured",
             "extracted": null
           }
         }
