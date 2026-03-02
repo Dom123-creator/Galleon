@@ -1,0 +1,1726 @@
+{
+  "meta": {
+    "run_date": "2026-03-02T18:10:52.214568",
+    "mode": "offline",
+    "source_bdc": "ARCC \u2014 Ares Capital Corporation",
+    "edgar_cik": "0001287750",
+    "filing_date": "seeded"
+  },
+  "stats": {
+    "records": 8,
+    "gt_fields_total": 88,
+    "galleon_targets_total": 120,
+    "bdc_coverage_pct": 42.3,
+    "galleon_gap_pct": 57.7,
+    "avg_rule_pass_rate": 42.9,
+    "conflicts_detected": 8,
+    "entity_match_rate": 100.0,
+    "extraction_status": "pending \u2014 run extraction pipeline against real docs"
+  },
+  "records": [
+    {
+      "galleon_id": "GT-ARCC-0001",
+      "source_bdc": "ARCC",
+      "edgar_cik": "0001287750",
+      "filing_date": "2026-03-02",
+      "company": {
+        "name": "Clearview Capital Group LLC",
+        "sector": "Software"
+      },
+      "ground_truth": {
+        "pct_net_assets": 2.14,
+        "fair_value_usd": 142300000,
+        "company_name": "Clearview Capital Group LLC",
+        "maturity_date": "2029-03-15",
+        "cost_basis_usd": 143000000,
+        "pricing_spread": "SOFR + 525 bps",
+        "security_type": "Floating Rate Loan",
+        "non_accrual": false,
+        "pik_rate": null,
+        "floor": "100 bps",
+        "facility_type": "First Lien Senior Secured"
+      },
+      "galleon_targets": {
+        "revenue_ttm": null,
+        "ebitda_ttm": null,
+        "gross_margin": null,
+        "total_debt": null,
+        "cash_position": null,
+        "free_cash_flow": null,
+        "leverage_ratio": null,
+        "interest_coverage": null,
+        "dscr": null,
+        "headcount": null,
+        "customer_concentration": null,
+        "jurisdiction": null,
+        "ein_tax_id": null,
+        "covenant_package": null,
+        "ownership_structure": null
+      },
+      "validation": {
+        "gt_field_count": 11,
+        "target_field_count": 15,
+        "total_schema_fields": 26,
+        "bdc_coverage_pct": 42.3,
+        "galleon_gap_pct": 57.7,
+        "extraction_status": "pending",
+        "accuracy_score": null,
+        "completeness_score": null
+      },
+      "conflict_sim": {
+        "field": "revenue_ttm",
+        "candidates": [
+          {
+            "source": "Management Financials.xlsx",
+            "source_type": "management_financials",
+            "value": "$59.8M",
+            "value_raw": 59766000.0,
+            "confidence": 0.97
+          },
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$58.7M",
+            "value_raw": 58690212.0,
+            "confidence": 0.88
+          }
+        ]
+      },
+      "required_docs": [
+        "Clearview_CIM_2024.pdf",
+        "Clearview_MgmtFinancials_Q3_2024.xlsx",
+        "Clearview_LoanAgreement.docx"
+      ],
+      "data_acquisition": {
+        "strategy": "Chapter 11 first-day affidavit cross-reference",
+        "epiq_search": "Clearview Capital Group LLC",
+        "pacer_search": "Clearview Capital Group LLC district:del",
+        "sba_search": "Clearview",
+        "priority": "normal"
+      },
+      "rule_validation": {
+        "rules_run": 7,
+        "rules_passed": 3,
+        "pass_rate": 42.9,
+        "details": {
+          "R007_maturity": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid future date: 2029-03-15"
+          },
+          "R008_spread": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid spread format"
+          },
+          "R009_fv_cost": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "FV/Cost 0.995 \u2014 normal"
+          },
+          "R002_revenue": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          },
+          "R003_ebitda": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R004_leverage": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R005_dscr": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          }
+        }
+      },
+      "conflict_resolution": {
+        "winner": {
+          "source": "Management Financials.xlsx",
+          "source_type": "management_financials",
+          "value": "$59.8M",
+          "value_raw": 59766000.0,
+          "confidence": 0.97
+        },
+        "losers": [
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$58.7M",
+            "value_raw": 58690212.0,
+            "confidence": 0.88
+          }
+        ],
+        "method": "priority:management_financials",
+        "conflict": true,
+        "field": "revenue_ttm",
+        "delta": "$1,075,788"
+      },
+      "entity_resolution": {
+        "match": "Clearview Capital Group LLC",
+        "confidence": 1.0,
+        "method": "exact"
+      },
+      "benchmark": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "fields_total": 11,
+        "fields_matched": 0,
+        "field_results": {
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 2.14,
+            "extracted": null
+          },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 142300000,
+            "extracted": null
+          },
+          "company_name": {
+            "status": "missing",
+            "gt": "Clearview Capital Group LLC",
+            "extracted": null
+          },
+          "maturity_date": {
+            "status": "missing",
+            "gt": "2029-03-15",
+            "extracted": null
+          },
+          "cost_basis_usd": {
+            "status": "missing",
+            "gt": 143000000,
+            "extracted": null
+          },
+          "pricing_spread": {
+            "status": "missing",
+            "gt": "SOFR + 525 bps",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "non_accrual": {
+            "status": "missing",
+            "gt": false,
+            "extracted": null
+          },
+          "pik_rate": {
+            "status": "missing",
+            "gt": null,
+            "extracted": null
+          },
+          "floor": {
+            "status": "missing",
+            "gt": "100 bps",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "First Lien Senior Secured",
+            "extracted": null
+          }
+        }
+      }
+    },
+    {
+      "galleon_id": "GT-ARCC-0002",
+      "source_bdc": "ARCC",
+      "edgar_cik": "0001287750",
+      "filing_date": "2026-03-02",
+      "company": {
+        "name": "Apex Industrial Services Inc.",
+        "sector": "Business Services"
+      },
+      "ground_truth": {
+        "pct_net_assets": 1.48,
+        "fair_value_usd": 98500000,
+        "company_name": "Apex Industrial Services Inc.",
+        "maturity_date": "2028-09-30",
+        "cost_basis_usd": 100000000,
+        "pricing_spread": "SOFR + 575 bps",
+        "security_type": "Floating Rate Loan",
+        "non_accrual": false,
+        "pik_rate": null,
+        "floor": "75 bps",
+        "facility_type": "First Lien Senior Secured"
+      },
+      "galleon_targets": {
+        "revenue_ttm": null,
+        "ebitda_ttm": null,
+        "gross_margin": null,
+        "total_debt": null,
+        "cash_position": null,
+        "free_cash_flow": null,
+        "leverage_ratio": null,
+        "interest_coverage": null,
+        "dscr": null,
+        "headcount": null,
+        "customer_concentration": null,
+        "jurisdiction": null,
+        "ein_tax_id": null,
+        "covenant_package": null,
+        "ownership_structure": null
+      },
+      "validation": {
+        "gt_field_count": 11,
+        "target_field_count": 15,
+        "total_schema_fields": 26,
+        "bdc_coverage_pct": 42.3,
+        "galleon_gap_pct": 57.7,
+        "extraction_status": "pending",
+        "accuracy_score": null,
+        "completeness_score": null
+      },
+      "conflict_sim": {
+        "field": "revenue_ttm",
+        "candidates": [
+          {
+            "source": "Management Financials.xlsx",
+            "source_type": "management_financials",
+            "value": "$41.4M",
+            "value_raw": 41370000.0,
+            "confidence": 0.97
+          },
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$40.6M",
+            "value_raw": 40625340.0,
+            "confidence": 0.88
+          }
+        ]
+      },
+      "required_docs": [
+        "Apex_CIM_2024.pdf",
+        "Apex_MgmtFinancials_Q3_2024.xlsx",
+        "Apex_LoanAgreement.docx"
+      ],
+      "data_acquisition": {
+        "strategy": "Chapter 11 first-day affidavit cross-reference",
+        "epiq_search": "Apex Industrial Services Inc.",
+        "pacer_search": "Apex Industrial Services Inc. district:del",
+        "sba_search": "Apex",
+        "priority": "normal"
+      },
+      "rule_validation": {
+        "rules_run": 7,
+        "rules_passed": 3,
+        "pass_rate": 42.9,
+        "details": {
+          "R007_maturity": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid future date: 2028-09-30"
+          },
+          "R008_spread": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid spread format"
+          },
+          "R009_fv_cost": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "FV/Cost 0.985 \u2014 normal"
+          },
+          "R002_revenue": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          },
+          "R003_ebitda": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R004_leverage": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R005_dscr": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          }
+        }
+      },
+      "conflict_resolution": {
+        "winner": {
+          "source": "Management Financials.xlsx",
+          "source_type": "management_financials",
+          "value": "$41.4M",
+          "value_raw": 41370000.0,
+          "confidence": 0.97
+        },
+        "losers": [
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$40.6M",
+            "value_raw": 40625340.0,
+            "confidence": 0.88
+          }
+        ],
+        "method": "priority:management_financials",
+        "conflict": true,
+        "field": "revenue_ttm",
+        "delta": "$744,660"
+      },
+      "entity_resolution": {
+        "match": "Apex Industrial Services Inc.",
+        "confidence": 1.0,
+        "method": "exact"
+      },
+      "benchmark": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "fields_total": 11,
+        "fields_matched": 0,
+        "field_results": {
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 1.48,
+            "extracted": null
+          },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 98500000,
+            "extracted": null
+          },
+          "company_name": {
+            "status": "missing",
+            "gt": "Apex Industrial Services Inc.",
+            "extracted": null
+          },
+          "maturity_date": {
+            "status": "missing",
+            "gt": "2028-09-30",
+            "extracted": null
+          },
+          "cost_basis_usd": {
+            "status": "missing",
+            "gt": 100000000,
+            "extracted": null
+          },
+          "pricing_spread": {
+            "status": "missing",
+            "gt": "SOFR + 575 bps",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "non_accrual": {
+            "status": "missing",
+            "gt": false,
+            "extracted": null
+          },
+          "pik_rate": {
+            "status": "missing",
+            "gt": null,
+            "extracted": null
+          },
+          "floor": {
+            "status": "missing",
+            "gt": "75 bps",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "First Lien Senior Secured",
+            "extracted": null
+          }
+        }
+      }
+    },
+    {
+      "galleon_id": "GT-ARCC-0003",
+      "source_bdc": "ARCC",
+      "edgar_cik": "0001287750",
+      "filing_date": "2026-03-02",
+      "company": {
+        "name": "Meridian Healthcare Holdings LLC",
+        "sector": "Healthcare Services"
+      },
+      "ground_truth": {
+        "pct_net_assets": 3.23,
+        "fair_value_usd": 215000000,
+        "company_name": "Meridian Healthcare Holdings LLC",
+        "maturity_date": "2030-06-30",
+        "cost_basis_usd": 220000000,
+        "pricing_spread": "SOFR + 650 bps",
+        "security_type": "Floating Rate Loan",
+        "non_accrual": false,
+        "pik_rate": "200 bps",
+        "floor": "100 bps",
+        "facility_type": "Unitranche"
+      },
+      "galleon_targets": {
+        "revenue_ttm": null,
+        "ebitda_ttm": null,
+        "gross_margin": null,
+        "total_debt": null,
+        "cash_position": null,
+        "free_cash_flow": null,
+        "leverage_ratio": null,
+        "interest_coverage": null,
+        "dscr": null,
+        "headcount": null,
+        "customer_concentration": null,
+        "jurisdiction": null,
+        "ein_tax_id": null,
+        "covenant_package": null,
+        "ownership_structure": null
+      },
+      "validation": {
+        "gt_field_count": 11,
+        "target_field_count": 15,
+        "total_schema_fields": 26,
+        "bdc_coverage_pct": 42.3,
+        "galleon_gap_pct": 57.7,
+        "extraction_status": "pending",
+        "accuracy_score": null,
+        "completeness_score": null
+      },
+      "conflict_sim": {
+        "field": "revenue_ttm",
+        "candidates": [
+          {
+            "source": "Management Financials.xlsx",
+            "source_type": "management_financials",
+            "value": "$90.3M",
+            "value_raw": 90300000.0,
+            "confidence": 0.97
+          },
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$88.7M",
+            "value_raw": 88674600.0,
+            "confidence": 0.88
+          }
+        ]
+      },
+      "required_docs": [
+        "Meridian_CIM_2024.pdf",
+        "Meridian_MgmtFinancials_Q3_2024.xlsx",
+        "Meridian_LoanAgreement.docx"
+      ],
+      "data_acquisition": {
+        "strategy": "Chapter 11 first-day affidavit cross-reference",
+        "epiq_search": "Meridian Healthcare Holdings LLC",
+        "pacer_search": "Meridian Healthcare Holdings LLC district:del",
+        "sba_search": "Meridian",
+        "priority": "normal"
+      },
+      "rule_validation": {
+        "rules_run": 7,
+        "rules_passed": 3,
+        "pass_rate": 42.9,
+        "details": {
+          "R007_maturity": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid future date: 2030-06-30"
+          },
+          "R008_spread": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid spread format"
+          },
+          "R009_fv_cost": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "FV/Cost 0.977 \u2014 normal"
+          },
+          "R002_revenue": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          },
+          "R003_ebitda": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R004_leverage": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R005_dscr": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          }
+        }
+      },
+      "conflict_resolution": {
+        "winner": {
+          "source": "Management Financials.xlsx",
+          "source_type": "management_financials",
+          "value": "$90.3M",
+          "value_raw": 90300000.0,
+          "confidence": 0.97
+        },
+        "losers": [
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$88.7M",
+            "value_raw": 88674600.0,
+            "confidence": 0.88
+          }
+        ],
+        "method": "priority:management_financials",
+        "conflict": true,
+        "field": "revenue_ttm",
+        "delta": "$1,625,400"
+      },
+      "entity_resolution": {
+        "match": "Meridian Healthcare Holdings LLC",
+        "confidence": 1.0,
+        "method": "exact"
+      },
+      "benchmark": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "fields_total": 11,
+        "fields_matched": 0,
+        "field_results": {
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 3.23,
+            "extracted": null
+          },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 215000000,
+            "extracted": null
+          },
+          "company_name": {
+            "status": "missing",
+            "gt": "Meridian Healthcare Holdings LLC",
+            "extracted": null
+          },
+          "maturity_date": {
+            "status": "missing",
+            "gt": "2030-06-30",
+            "extracted": null
+          },
+          "cost_basis_usd": {
+            "status": "missing",
+            "gt": 220000000,
+            "extracted": null
+          },
+          "pricing_spread": {
+            "status": "missing",
+            "gt": "SOFR + 650 bps",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "non_accrual": {
+            "status": "missing",
+            "gt": false,
+            "extracted": null
+          },
+          "pik_rate": {
+            "status": "missing",
+            "gt": "200 bps",
+            "extracted": null
+          },
+          "floor": {
+            "status": "missing",
+            "gt": "100 bps",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "Unitranche",
+            "extracted": null
+          }
+        }
+      }
+    },
+    {
+      "galleon_id": "GT-ARCC-0004",
+      "source_bdc": "ARCC",
+      "edgar_cik": "0001287750",
+      "filing_date": "2026-03-02",
+      "company": {
+        "name": "Summit Logistics Partners LP",
+        "sector": "Transportation"
+      },
+      "ground_truth": {
+        "pct_net_assets": 1.01,
+        "fair_value_usd": 67200000,
+        "company_name": "Summit Logistics Partners LP",
+        "maturity_date": "2027-12-31",
+        "cost_basis_usd": 75000000,
+        "pricing_spread": "SOFR + 875 bps",
+        "security_type": "Floating Rate Loan",
+        "non_accrual": true,
+        "pik_rate": null,
+        "floor": "150 bps",
+        "facility_type": "Second Lien Senior Secured"
+      },
+      "galleon_targets": {
+        "revenue_ttm": null,
+        "ebitda_ttm": null,
+        "gross_margin": null,
+        "total_debt": null,
+        "cash_position": null,
+        "free_cash_flow": null,
+        "leverage_ratio": null,
+        "interest_coverage": null,
+        "dscr": null,
+        "headcount": null,
+        "customer_concentration": null,
+        "jurisdiction": null,
+        "ein_tax_id": null,
+        "covenant_package": null,
+        "ownership_structure": null
+      },
+      "validation": {
+        "gt_field_count": 11,
+        "target_field_count": 15,
+        "total_schema_fields": 26,
+        "bdc_coverage_pct": 42.3,
+        "galleon_gap_pct": 57.7,
+        "extraction_status": "pending",
+        "accuracy_score": null,
+        "completeness_score": null
+      },
+      "conflict_sim": {
+        "field": "revenue_ttm",
+        "candidates": [
+          {
+            "source": "Management Financials.xlsx",
+            "source_type": "management_financials",
+            "value": "$28.2M",
+            "value_raw": 28224000.0,
+            "confidence": 0.97
+          },
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$27.7M",
+            "value_raw": 27715968.0,
+            "confidence": 0.88
+          }
+        ]
+      },
+      "required_docs": [
+        "Summit_CIM_2024.pdf",
+        "Summit_MgmtFinancials_Q3_2024.xlsx",
+        "Summit_LoanAgreement.docx"
+      ],
+      "data_acquisition": {
+        "strategy": "Chapter 11 first-day affidavit cross-reference",
+        "epiq_search": "Summit Logistics Partners LP",
+        "pacer_search": "Summit Logistics Partners LP district:del",
+        "sba_search": "Summit",
+        "priority": "high"
+      },
+      "rule_validation": {
+        "rules_run": 7,
+        "rules_passed": 3,
+        "pass_rate": 42.9,
+        "details": {
+          "R007_maturity": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid future date: 2027-12-31"
+          },
+          "R008_spread": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid spread format"
+          },
+          "R009_fv_cost": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "FV/Cost 0.896 \u2014 normal"
+          },
+          "R002_revenue": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          },
+          "R003_ebitda": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R004_leverage": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R005_dscr": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          }
+        }
+      },
+      "conflict_resolution": {
+        "winner": {
+          "source": "Management Financials.xlsx",
+          "source_type": "management_financials",
+          "value": "$28.2M",
+          "value_raw": 28224000.0,
+          "confidence": 0.97
+        },
+        "losers": [
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$27.7M",
+            "value_raw": 27715968.0,
+            "confidence": 0.88
+          }
+        ],
+        "method": "priority:management_financials",
+        "conflict": true,
+        "field": "revenue_ttm",
+        "delta": "$508,032"
+      },
+      "entity_resolution": {
+        "match": "Summit Logistics Partners LP",
+        "confidence": 1.0,
+        "method": "exact"
+      },
+      "benchmark": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "fields_total": 11,
+        "fields_matched": 0,
+        "field_results": {
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 1.01,
+            "extracted": null
+          },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 67200000,
+            "extracted": null
+          },
+          "company_name": {
+            "status": "missing",
+            "gt": "Summit Logistics Partners LP",
+            "extracted": null
+          },
+          "maturity_date": {
+            "status": "missing",
+            "gt": "2027-12-31",
+            "extracted": null
+          },
+          "cost_basis_usd": {
+            "status": "missing",
+            "gt": 75000000,
+            "extracted": null
+          },
+          "pricing_spread": {
+            "status": "missing",
+            "gt": "SOFR + 875 bps",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "non_accrual": {
+            "status": "missing",
+            "gt": true,
+            "extracted": null
+          },
+          "pik_rate": {
+            "status": "missing",
+            "gt": null,
+            "extracted": null
+          },
+          "floor": {
+            "status": "missing",
+            "gt": "150 bps",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "Second Lien Senior Secured",
+            "extracted": null
+          }
+        }
+      }
+    },
+    {
+      "galleon_id": "GT-ARCC-0005",
+      "source_bdc": "ARCC",
+      "edgar_cik": "0001287750",
+      "filing_date": "2026-03-02",
+      "company": {
+        "name": "Vantage Software Solutions Inc.",
+        "sector": "Technology"
+      },
+      "ground_truth": {
+        "pct_net_assets": 5.02,
+        "fair_value_usd": 334000000,
+        "company_name": "Vantage Software Solutions Inc.",
+        "maturity_date": "2030-03-31",
+        "cost_basis_usd": 335000000,
+        "pricing_spread": "SOFR + 500 bps",
+        "security_type": "Floating Rate Loan",
+        "non_accrual": false,
+        "pik_rate": null,
+        "floor": "75 bps",
+        "facility_type": "First Lien Senior Secured"
+      },
+      "galleon_targets": {
+        "revenue_ttm": null,
+        "ebitda_ttm": null,
+        "gross_margin": null,
+        "total_debt": null,
+        "cash_position": null,
+        "free_cash_flow": null,
+        "leverage_ratio": null,
+        "interest_coverage": null,
+        "dscr": null,
+        "headcount": null,
+        "customer_concentration": null,
+        "jurisdiction": null,
+        "ein_tax_id": null,
+        "covenant_package": null,
+        "ownership_structure": null
+      },
+      "validation": {
+        "gt_field_count": 11,
+        "target_field_count": 15,
+        "total_schema_fields": 26,
+        "bdc_coverage_pct": 42.3,
+        "galleon_gap_pct": 57.7,
+        "extraction_status": "pending",
+        "accuracy_score": null,
+        "completeness_score": null
+      },
+      "conflict_sim": {
+        "field": "revenue_ttm",
+        "candidates": [
+          {
+            "source": "Management Financials.xlsx",
+            "source_type": "management_financials",
+            "value": "$140.3M",
+            "value_raw": 140280000.0,
+            "confidence": 0.97
+          },
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$137.8M",
+            "value_raw": 137754960.0,
+            "confidence": 0.88
+          }
+        ]
+      },
+      "required_docs": [
+        "Vantage_CIM_2024.pdf",
+        "Vantage_MgmtFinancials_Q3_2024.xlsx",
+        "Vantage_LoanAgreement.docx"
+      ],
+      "data_acquisition": {
+        "strategy": "Chapter 11 first-day affidavit cross-reference",
+        "epiq_search": "Vantage Software Solutions Inc.",
+        "pacer_search": "Vantage Software Solutions Inc. district:del",
+        "sba_search": "Vantage",
+        "priority": "normal"
+      },
+      "rule_validation": {
+        "rules_run": 7,
+        "rules_passed": 3,
+        "pass_rate": 42.9,
+        "details": {
+          "R007_maturity": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid future date: 2030-03-31"
+          },
+          "R008_spread": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid spread format"
+          },
+          "R009_fv_cost": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "FV/Cost 0.997 \u2014 normal"
+          },
+          "R002_revenue": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          },
+          "R003_ebitda": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R004_leverage": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R005_dscr": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          }
+        }
+      },
+      "conflict_resolution": {
+        "winner": {
+          "source": "Management Financials.xlsx",
+          "source_type": "management_financials",
+          "value": "$140.3M",
+          "value_raw": 140280000.0,
+          "confidence": 0.97
+        },
+        "losers": [
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$137.8M",
+            "value_raw": 137754960.0,
+            "confidence": 0.88
+          }
+        ],
+        "method": "priority:management_financials",
+        "conflict": true,
+        "field": "revenue_ttm",
+        "delta": "$2,525,040"
+      },
+      "entity_resolution": {
+        "match": "Vantage Software Solutions Inc.",
+        "confidence": 1.0,
+        "method": "exact"
+      },
+      "benchmark": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "fields_total": 11,
+        "fields_matched": 0,
+        "field_results": {
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 5.02,
+            "extracted": null
+          },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 334000000,
+            "extracted": null
+          },
+          "company_name": {
+            "status": "missing",
+            "gt": "Vantage Software Solutions Inc.",
+            "extracted": null
+          },
+          "maturity_date": {
+            "status": "missing",
+            "gt": "2030-03-31",
+            "extracted": null
+          },
+          "cost_basis_usd": {
+            "status": "missing",
+            "gt": 335000000,
+            "extracted": null
+          },
+          "pricing_spread": {
+            "status": "missing",
+            "gt": "SOFR + 500 bps",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "non_accrual": {
+            "status": "missing",
+            "gt": false,
+            "extracted": null
+          },
+          "pik_rate": {
+            "status": "missing",
+            "gt": null,
+            "extracted": null
+          },
+          "floor": {
+            "status": "missing",
+            "gt": "75 bps",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "First Lien Senior Secured",
+            "extracted": null
+          }
+        }
+      }
+    },
+    {
+      "galleon_id": "GT-ARCC-0006",
+      "source_bdc": "ARCC",
+      "edgar_cik": "0001287750",
+      "filing_date": "2026-03-02",
+      "company": {
+        "name": "Bluewater Environmental Group LLC",
+        "sector": "Environmental Services"
+      },
+      "ground_truth": {
+        "pct_net_assets": 1.32,
+        "fair_value_usd": 88100000,
+        "company_name": "Bluewater Environmental Group LLC",
+        "maturity_date": "2029-09-30",
+        "cost_basis_usd": 90000000,
+        "pricing_spread": "SOFR + 600 bps",
+        "security_type": "Floating Rate Loan",
+        "non_accrual": false,
+        "pik_rate": null,
+        "floor": "100 bps",
+        "facility_type": "First Lien Senior Secured"
+      },
+      "galleon_targets": {
+        "revenue_ttm": null,
+        "ebitda_ttm": null,
+        "gross_margin": null,
+        "total_debt": null,
+        "cash_position": null,
+        "free_cash_flow": null,
+        "leverage_ratio": null,
+        "interest_coverage": null,
+        "dscr": null,
+        "headcount": null,
+        "customer_concentration": null,
+        "jurisdiction": null,
+        "ein_tax_id": null,
+        "covenant_package": null,
+        "ownership_structure": null
+      },
+      "validation": {
+        "gt_field_count": 11,
+        "target_field_count": 15,
+        "total_schema_fields": 26,
+        "bdc_coverage_pct": 42.3,
+        "galleon_gap_pct": 57.7,
+        "extraction_status": "pending",
+        "accuracy_score": null,
+        "completeness_score": null
+      },
+      "conflict_sim": {
+        "field": "revenue_ttm",
+        "candidates": [
+          {
+            "source": "Management Financials.xlsx",
+            "source_type": "management_financials",
+            "value": "$37.0M",
+            "value_raw": 37002000.0,
+            "confidence": 0.97
+          },
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$36.3M",
+            "value_raw": 36335964.0,
+            "confidence": 0.88
+          }
+        ]
+      },
+      "required_docs": [
+        "Bluewater_CIM_2024.pdf",
+        "Bluewater_MgmtFinancials_Q3_2024.xlsx",
+        "Bluewater_LoanAgreement.docx"
+      ],
+      "data_acquisition": {
+        "strategy": "Chapter 11 first-day affidavit cross-reference",
+        "epiq_search": "Bluewater Environmental Group LLC",
+        "pacer_search": "Bluewater Environmental Group LLC district:del",
+        "sba_search": "Bluewater",
+        "priority": "normal"
+      },
+      "rule_validation": {
+        "rules_run": 7,
+        "rules_passed": 3,
+        "pass_rate": 42.9,
+        "details": {
+          "R007_maturity": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid future date: 2029-09-30"
+          },
+          "R008_spread": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid spread format"
+          },
+          "R009_fv_cost": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "FV/Cost 0.979 \u2014 normal"
+          },
+          "R002_revenue": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          },
+          "R003_ebitda": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R004_leverage": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R005_dscr": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          }
+        }
+      },
+      "conflict_resolution": {
+        "winner": {
+          "source": "Management Financials.xlsx",
+          "source_type": "management_financials",
+          "value": "$37.0M",
+          "value_raw": 37002000.0,
+          "confidence": 0.97
+        },
+        "losers": [
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$36.3M",
+            "value_raw": 36335964.0,
+            "confidence": 0.88
+          }
+        ],
+        "method": "priority:management_financials",
+        "conflict": true,
+        "field": "revenue_ttm",
+        "delta": "$666,036"
+      },
+      "entity_resolution": {
+        "match": "Bluewater Environmental Group LLC",
+        "confidence": 1.0,
+        "method": "exact"
+      },
+      "benchmark": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "fields_total": 11,
+        "fields_matched": 0,
+        "field_results": {
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 1.32,
+            "extracted": null
+          },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 88100000,
+            "extracted": null
+          },
+          "company_name": {
+            "status": "missing",
+            "gt": "Bluewater Environmental Group LLC",
+            "extracted": null
+          },
+          "maturity_date": {
+            "status": "missing",
+            "gt": "2029-09-30",
+            "extracted": null
+          },
+          "cost_basis_usd": {
+            "status": "missing",
+            "gt": 90000000,
+            "extracted": null
+          },
+          "pricing_spread": {
+            "status": "missing",
+            "gt": "SOFR + 600 bps",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "non_accrual": {
+            "status": "missing",
+            "gt": false,
+            "extracted": null
+          },
+          "pik_rate": {
+            "status": "missing",
+            "gt": null,
+            "extracted": null
+          },
+          "floor": {
+            "status": "missing",
+            "gt": "100 bps",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "First Lien Senior Secured",
+            "extracted": null
+          }
+        }
+      }
+    },
+    {
+      "galleon_id": "GT-ARCC-0007",
+      "source_bdc": "ARCC",
+      "edgar_cik": "0001287750",
+      "filing_date": "2026-03-02",
+      "company": {
+        "name": "Granite Construction Holdings Inc.",
+        "sector": "Construction"
+      },
+      "ground_truth": {
+        "pct_net_assets": 1.83,
+        "fair_value_usd": 121500000,
+        "company_name": "Granite Construction Holdings Inc.",
+        "maturity_date": "2028-12-31",
+        "cost_basis_usd": 125000000,
+        "pricing_spread": "SOFR + 700 bps",
+        "security_type": "Floating Rate Loan",
+        "non_accrual": false,
+        "pik_rate": "150 bps",
+        "floor": "125 bps",
+        "facility_type": "Unitranche"
+      },
+      "galleon_targets": {
+        "revenue_ttm": null,
+        "ebitda_ttm": null,
+        "gross_margin": null,
+        "total_debt": null,
+        "cash_position": null,
+        "free_cash_flow": null,
+        "leverage_ratio": null,
+        "interest_coverage": null,
+        "dscr": null,
+        "headcount": null,
+        "customer_concentration": null,
+        "jurisdiction": null,
+        "ein_tax_id": null,
+        "covenant_package": null,
+        "ownership_structure": null
+      },
+      "validation": {
+        "gt_field_count": 11,
+        "target_field_count": 15,
+        "total_schema_fields": 26,
+        "bdc_coverage_pct": 42.3,
+        "galleon_gap_pct": 57.7,
+        "extraction_status": "pending",
+        "accuracy_score": null,
+        "completeness_score": null
+      },
+      "conflict_sim": {
+        "field": "revenue_ttm",
+        "candidates": [
+          {
+            "source": "Management Financials.xlsx",
+            "source_type": "management_financials",
+            "value": "$51.0M",
+            "value_raw": 51030000.0,
+            "confidence": 0.97
+          },
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$50.1M",
+            "value_raw": 50111460.0,
+            "confidence": 0.88
+          }
+        ]
+      },
+      "required_docs": [
+        "Granite_CIM_2024.pdf",
+        "Granite_MgmtFinancials_Q3_2024.xlsx",
+        "Granite_LoanAgreement.docx"
+      ],
+      "data_acquisition": {
+        "strategy": "Chapter 11 first-day affidavit cross-reference",
+        "epiq_search": "Granite Construction Holdings Inc.",
+        "pacer_search": "Granite Construction Holdings Inc. district:del",
+        "sba_search": "Granite",
+        "priority": "normal"
+      },
+      "rule_validation": {
+        "rules_run": 7,
+        "rules_passed": 3,
+        "pass_rate": 42.9,
+        "details": {
+          "R007_maturity": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid future date: 2028-12-31"
+          },
+          "R008_spread": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid spread format"
+          },
+          "R009_fv_cost": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "FV/Cost 0.972 \u2014 normal"
+          },
+          "R002_revenue": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          },
+          "R003_ebitda": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R004_leverage": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R005_dscr": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          }
+        }
+      },
+      "conflict_resolution": {
+        "winner": {
+          "source": "Management Financials.xlsx",
+          "source_type": "management_financials",
+          "value": "$51.0M",
+          "value_raw": 51030000.0,
+          "confidence": 0.97
+        },
+        "losers": [
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$50.1M",
+            "value_raw": 50111460.0,
+            "confidence": 0.88
+          }
+        ],
+        "method": "priority:management_financials",
+        "conflict": true,
+        "field": "revenue_ttm",
+        "delta": "$918,540"
+      },
+      "entity_resolution": {
+        "match": "Granite Construction Holdings Inc.",
+        "confidence": 1.0,
+        "method": "exact"
+      },
+      "benchmark": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "fields_total": 11,
+        "fields_matched": 0,
+        "field_results": {
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 1.83,
+            "extracted": null
+          },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 121500000,
+            "extracted": null
+          },
+          "company_name": {
+            "status": "missing",
+            "gt": "Granite Construction Holdings Inc.",
+            "extracted": null
+          },
+          "maturity_date": {
+            "status": "missing",
+            "gt": "2028-12-31",
+            "extracted": null
+          },
+          "cost_basis_usd": {
+            "status": "missing",
+            "gt": 125000000,
+            "extracted": null
+          },
+          "pricing_spread": {
+            "status": "missing",
+            "gt": "SOFR + 700 bps",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "non_accrual": {
+            "status": "missing",
+            "gt": false,
+            "extracted": null
+          },
+          "pik_rate": {
+            "status": "missing",
+            "gt": "150 bps",
+            "extracted": null
+          },
+          "floor": {
+            "status": "missing",
+            "gt": "125 bps",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "Unitranche",
+            "extracted": null
+          }
+        }
+      }
+    },
+    {
+      "galleon_id": "GT-ARCC-0008",
+      "source_bdc": "ARCC",
+      "edgar_cik": "0001287750",
+      "filing_date": "2026-03-02",
+      "company": {
+        "name": "Cascade Aerospace Components LLC",
+        "sector": "Aerospace & Defense"
+      },
+      "ground_truth": {
+        "pct_net_assets": 2.65,
+        "fair_value_usd": 176000000,
+        "company_name": "Cascade Aerospace Components LLC",
+        "maturity_date": "2030-06-30",
+        "cost_basis_usd": 177500000,
+        "pricing_spread": "SOFR + 550 bps",
+        "security_type": "Floating Rate Loan",
+        "non_accrual": false,
+        "pik_rate": null,
+        "floor": "100 bps",
+        "facility_type": "First Lien Senior Secured"
+      },
+      "galleon_targets": {
+        "revenue_ttm": null,
+        "ebitda_ttm": null,
+        "gross_margin": null,
+        "total_debt": null,
+        "cash_position": null,
+        "free_cash_flow": null,
+        "leverage_ratio": null,
+        "interest_coverage": null,
+        "dscr": null,
+        "headcount": null,
+        "customer_concentration": null,
+        "jurisdiction": null,
+        "ein_tax_id": null,
+        "covenant_package": null,
+        "ownership_structure": null
+      },
+      "validation": {
+        "gt_field_count": 11,
+        "target_field_count": 15,
+        "total_schema_fields": 26,
+        "bdc_coverage_pct": 42.3,
+        "galleon_gap_pct": 57.7,
+        "extraction_status": "pending",
+        "accuracy_score": null,
+        "completeness_score": null
+      },
+      "conflict_sim": {
+        "field": "revenue_ttm",
+        "candidates": [
+          {
+            "source": "Management Financials.xlsx",
+            "source_type": "management_financials",
+            "value": "$73.9M",
+            "value_raw": 73920000.0,
+            "confidence": 0.97
+          },
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$72.6M",
+            "value_raw": 72589440.0,
+            "confidence": 0.88
+          }
+        ]
+      },
+      "required_docs": [
+        "Cascade_CIM_2024.pdf",
+        "Cascade_MgmtFinancials_Q3_2024.xlsx",
+        "Cascade_LoanAgreement.docx"
+      ],
+      "data_acquisition": {
+        "strategy": "Chapter 11 first-day affidavit cross-reference",
+        "epiq_search": "Cascade Aerospace Components LLC",
+        "pacer_search": "Cascade Aerospace Components LLC district:del",
+        "sba_search": "Cascade",
+        "priority": "normal"
+      },
+      "rule_validation": {
+        "rules_run": 7,
+        "rules_passed": 3,
+        "pass_rate": 42.9,
+        "details": {
+          "R007_maturity": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid future date: 2030-06-30"
+          },
+          "R008_spread": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "Valid spread format"
+          },
+          "R009_fv_cost": {
+            "passed": true,
+            "confidence": 1.0,
+            "note": "FV/Cost 0.992 \u2014 normal"
+          },
+          "R002_revenue": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          },
+          "R003_ebitda": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R004_leverage": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing operand"
+          },
+          "R005_dscr": {
+            "passed": false,
+            "confidence": 0.0,
+            "note": "Missing"
+          }
+        }
+      },
+      "conflict_resolution": {
+        "winner": {
+          "source": "Management Financials.xlsx",
+          "source_type": "management_financials",
+          "value": "$73.9M",
+          "value_raw": 73920000.0,
+          "confidence": 0.97
+        },
+        "losers": [
+          {
+            "source": "Q3 2024 CIM PDF p.12",
+            "source_type": "cim_pdf",
+            "value": "$72.6M",
+            "value_raw": 72589440.0,
+            "confidence": 0.88
+          }
+        ],
+        "method": "priority:management_financials",
+        "conflict": true,
+        "field": "revenue_ttm",
+        "delta": "$1,330,560"
+      },
+      "entity_resolution": {
+        "match": "Cascade Aerospace Components LLC",
+        "confidence": 1.0,
+        "method": "exact"
+      },
+      "benchmark": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "fields_total": 11,
+        "fields_matched": 0,
+        "field_results": {
+          "pct_net_assets": {
+            "status": "missing",
+            "gt": 2.65,
+            "extracted": null
+          },
+          "fair_value_usd": {
+            "status": "missing",
+            "gt": 176000000,
+            "extracted": null
+          },
+          "company_name": {
+            "status": "missing",
+            "gt": "Cascade Aerospace Components LLC",
+            "extracted": null
+          },
+          "maturity_date": {
+            "status": "missing",
+            "gt": "2030-06-30",
+            "extracted": null
+          },
+          "cost_basis_usd": {
+            "status": "missing",
+            "gt": 177500000,
+            "extracted": null
+          },
+          "pricing_spread": {
+            "status": "missing",
+            "gt": "SOFR + 550 bps",
+            "extracted": null
+          },
+          "security_type": {
+            "status": "missing",
+            "gt": "Floating Rate Loan",
+            "extracted": null
+          },
+          "non_accrual": {
+            "status": "missing",
+            "gt": false,
+            "extracted": null
+          },
+          "pik_rate": {
+            "status": "missing",
+            "gt": null,
+            "extracted": null
+          },
+          "floor": {
+            "status": "missing",
+            "gt": "100 bps",
+            "extracted": null
+          },
+          "facility_type": {
+            "status": "missing",
+            "gt": "First Lien Senior Secured",
+            "extracted": null
+          }
+        }
+      }
+    }
+  ]
+}
