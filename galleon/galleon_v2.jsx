@@ -335,6 +335,219 @@ function ConflictPanel({ field, sources }) {
   );
 }
 
+// ─── Galleon Assistant ────────────────────────────────────────────────────────
+function GalleonAssistant({ onNavigate, onUpload, onSelectCompany }) {
+  const [open, setOpen]     = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput]   = useState("");
+  const [typing, setTyping] = useState(false);
+  const [convId, setConvId] = useState(null);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    if (open && messages.length === 0) _send("hi", true);
+  }, [open]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, typing]);
+
+  async function _send(text, isGreeting = false) {
+    if (!text.trim()) return;
+    if (!isGreeting) setMessages(prev => [...prev, { role: "user", text }]);
+    setInput("");
+    setTyping(true);
+
+    try {
+      const data = await apiFetch("/assistant/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, conversation_id: convId, session_context: {} }),
+      });
+
+      setTyping(false);
+      if (!data) {
+        setMessages(prev => [...prev, { role: "assistant", text: "Connection error — is the API server running?" }]);
+        return;
+      }
+
+      setConvId(data.conversation_id);
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        text: data.response,
+        matches: data.company_matches,
+        action: data.action,
+        actionParams: data.action_params,
+      }]);
+
+      // Handle navigation / upload actions
+      if (data.action === "navigate_tab" && data.action_params?.tab && onNavigate) {
+        onNavigate(data.action_params.tab);
+      }
+    } catch {
+      setTyping(false);
+      setMessages(prev => [...prev, { role: "assistant", text: "Error reaching Galleon assistant." }]);
+    }
+  }
+
+  const A = {
+    anchor: {
+      position:"fixed", bottom:24, right:24, width:52, height:52, borderRadius:"50%",
+      background:T.navy3, border:`2px solid ${T.gold}`, cursor:"pointer",
+      display:"flex", alignItems:"center", justifyContent:"center",
+      boxShadow:`0 0 18px ${T.gold}55`, zIndex:1000,
+    },
+    panel: {
+      position:"fixed", bottom:24, right:24, width:360, height:520,
+      background:T.navy, border:`1px solid ${T.gold}55`, borderRadius:12,
+      display:"flex", flexDirection:"column", zIndex:1000,
+      boxShadow:`0 8px 32px rgba(0,0,0,0.65), 0 0 28px ${T.gold}22`,
+      overflow:"hidden",
+    },
+    hdr: {
+      padding:"11px 14px", background:T.navy2, borderBottom:`1px solid ${T.border}`,
+      display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0,
+    },
+    msgs: {
+      flex:1, overflowY:"auto", padding:"12px 13px",
+      display:"flex", flexDirection:"column", gap:9,
+    },
+    bubble: role => ({
+      maxWidth:"88%", alignSelf: role==="user" ? "flex-end" : "flex-start",
+      background: role==="user" ? T.navy4 : T.navy2,
+      border:`1px solid ${role==="user" ? T.border2 : T.border}`,
+      borderRadius: role==="user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
+      padding:"9px 12px", fontSize:12, color:T.cream, lineHeight:1.6,
+      fontFamily:"'DM Mono', monospace", whiteSpace:"pre-wrap",
+    }),
+    card: {
+      background:T.navy3, border:`1px solid ${T.gold}44`, borderRadius:8,
+      padding:"9px 11px", marginTop:7,
+    },
+    cardName: { fontSize:12, fontWeight:700, color:T.gold, marginBottom:5 },
+    row: { display:"flex", justifyContent:"space-between", marginBottom:3, fontSize:11 },
+    val: { color:T.cream2, fontFamily:"'DM Mono', monospace" },
+    btns: { display:"flex", gap:7, marginTop:8 },
+    btn: primary => ({
+      flex:1, padding:"5px 0", borderRadius:5, cursor:"pointer",
+      border:`1px solid ${primary ? T.gold : T.border}`,
+      background: primary ? `${T.gold}20` : "transparent",
+      color: primary ? T.gold : T.muted, fontSize:10,
+      fontFamily:"'DM Mono', monospace",
+    }),
+    inputRow: {
+      padding:"10px 12px", background:T.navy2, borderTop:`1px solid ${T.border}`,
+      display:"flex", gap:7, flexShrink:0,
+    },
+    inp: {
+      flex:1, background:T.navy3, border:`1px solid ${T.border}`, borderRadius:8,
+      padding:"7px 11px", color:T.cream, fontSize:12,
+      fontFamily:"'DM Mono', monospace", outline:"none",
+    },
+    sendBtn: {
+      padding:"7px 13px", background:T.gold, border:"none", borderRadius:8,
+      color:T.navy, fontSize:13, fontWeight:700, cursor:"pointer",
+    },
+    dot: delay => ({
+      width:6, height:6, borderRadius:"50%", background:T.muted,
+      animation:"blink 1.2s infinite", animationDelay:delay,
+    }),
+  };
+
+  if (!open) {
+    return (
+      <button style={A.anchor} onClick={() => setOpen(true)} title="Open Galleon Assistant">
+        <svg width="24" height="24" viewBox="0 0 28 28" fill="none">
+          <path d="M4 20 Q14 8 24 20" stroke={T.gold} strokeWidth="1.8" fill="none"/>
+          <path d="M14 6 L14 20" stroke={T.gold} strokeWidth="1.5"/>
+          <path d="M14 8 L20 14 L14 14 Z" fill={T.gold} opacity="0.7"/>
+          <path d="M4 20 Q14 24 24 20 L24 22 Q14 27 4 22 Z" fill={T.gold} opacity="0.4"/>
+        </svg>
+      </button>
+    );
+  }
+
+  return (
+    <div style={A.panel}>
+      {/* Header */}
+      <div style={A.hdr}>
+        <div>
+          <div style={{ fontSize:13, fontWeight:700, color:T.gold, fontFamily:"'DM Mono', monospace", letterSpacing:"0.1em" }}>⚓ GALLEON</div>
+          <div style={{ fontSize:10, color:T.muted, fontFamily:"'DM Mono', monospace" }}>Private Credit Assistant</div>
+        </div>
+        <button style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:17, lineHeight:1 }}
+          onClick={() => setOpen(false)}>✕</button>
+      </div>
+
+      {/* Messages */}
+      <div style={A.msgs}>
+        {messages.map((msg, i) => (
+          <div key={i}>
+            {msg.role === "assistant" && (
+              <div style={{ fontSize:9, color:T.muted, fontFamily:"'DM Mono', monospace", marginBottom:3, letterSpacing:"0.08em" }}>GALLEON</div>
+            )}
+            <div style={A.bubble(msg.role)}>{msg.text}</div>
+
+            {/* Company match cards */}
+            {msg.matches && msg.matches.map((co, j) => (
+              <div key={j} style={A.card}>
+                <div style={A.cardName}>{co.company_name}</div>
+                {co.source_bdc && (
+                  <div style={A.row}><span style={{ color:T.muted }}>BDC</span><span style={A.val}>{co.source_bdc}</span></div>
+                )}
+                {co.sector && (
+                  <div style={A.row}><span style={{ color:T.muted }}>Sector</span><span style={A.val}>{co.sector}</span></div>
+                )}
+                {co.facility_type && (
+                  <div style={A.row}><span style={{ color:T.muted }}>Facility</span><span style={A.val}>{co.facility_type}</span></div>
+                )}
+                {co.pricing_spread && (
+                  <div style={A.row}><span style={{ color:T.muted }}>Spread</span><span style={{ ...A.val, color:T.green }}>{co.pricing_spread}</span></div>
+                )}
+                {co.fair_value_usd && (
+                  <div style={A.row}><span style={{ color:T.muted }}>Fair Value</span><span style={A.val}>${(co.fair_value_usd/1e6).toFixed(1)}M</span></div>
+                )}
+                {co.maturity_date && (
+                  <div style={A.row}><span style={{ color:T.muted }}>Maturity</span><span style={A.val}>{co.maturity_date}</span></div>
+                )}
+                {co.non_accrual && (
+                  <div style={{ color:T.red, fontSize:10, marginTop:3, fontFamily:"'DM Mono', monospace" }}>⚠ Non-Accrual</div>
+                )}
+                <div style={A.btns}>
+                  <button style={A.btn(true)} onClick={() => { onUpload && onUpload(co.company_name); }}>Upload Docs</button>
+                  <button style={A.btn(false)} onClick={() => { onSelectCompany && onSelectCompany(co); onNavigate && onNavigate("profiles"); }}>View Profile</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+
+        {typing && (
+          <div>
+            <div style={{ fontSize:9, color:T.muted, fontFamily:"'DM Mono', monospace", marginBottom:3 }}>GALLEON</div>
+            <div style={{ ...A.bubble("assistant"), display:"flex", gap:5, alignItems:"center", padding:"11px 14px" }}>
+              <div style={A.dot("0s")}/><div style={A.dot("0.2s")}/><div style={A.dot("0.4s")}/>
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef}/>
+      </div>
+
+      {/* Input bar */}
+      <div style={A.inputRow}>
+        <input
+          style={A.inp}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); _send(input); } }}
+          placeholder="Search company or ask anything..."
+        />
+        <button style={A.sendBtn} onClick={() => _send(input)}>→</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   // ── Existing UI state ────────────────────────────────────────────────────────
@@ -1473,6 +1686,12 @@ export default function App() {
 
       <div style={{ height:1, background:`linear-gradient(to right, transparent 5%, ${T.gold}44 30%, ${T.gold}44 70%, transparent 95%)` }}/>
       <div style={S.main}>{renderContent()}</div>
+
+      <GalleonAssistant
+        onNavigate={setTab}
+        onUpload={(companyName) => { setTab("pipeline"); }}
+        onSelectCompany={(co) => { setTab("profiles"); }}
+      />
     </div>
   );
 }

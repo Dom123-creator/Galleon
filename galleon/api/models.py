@@ -151,3 +151,42 @@ class RuleOut(BaseModel):
     logic: Optional[str] = None
     base_confidence: float
     pass_rate: Optional[float] = None
+
+
+# ── BDC Universe ──────────────────────────────────────────────────────────────
+
+class CompanySearchResult(BaseModel):
+    company_name: str
+    source_bdc: str
+    sector: Optional[str] = None
+    facility_type: Optional[str] = None
+    pricing_spread: Optional[str] = None
+    maturity_date: Optional[str] = None
+    fair_value_usd: Optional[float] = None
+    cost_basis_usd: Optional[float] = None
+    non_accrual: bool = False
+    match_confidence: float
+
+
+class BdcSummary(BaseModel):
+    ticker: str
+    name: str
+    cik: str
+    company_count: int
+    last_indexed: Optional[str] = None
+
+
+# ── Assistant ─────────────────────────────────────────────────────────────────
+
+class AssistantChatIn(BaseModel):
+    message: str
+    conversation_id: Optional[str] = None
+    session_context: Optional[Dict[str, Any]] = {}
+
+
+class AssistantChatOut(BaseModel):
+    response: str
+    conversation_id: str
+    action: Optional[str] = None
+    action_params: Optional[Dict[str, Any]] = {}
+    company_matches: Optional[List[CompanySearchResult]] = None

@@ -25,9 +25,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .models import (
+    AssistantChatIn,
+    AssistantChatOut,
+    BdcSummary,
     BenchmarkSummary,
     CompanyCreate,
     CompanyOut,
+    CompanySearchResult,
     CompanySummary,
     ConflictOut,
     ConflictResolveRequest,
@@ -82,9 +86,31 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup_event():
+    import threading
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     connected = db.is_connected()
     print(f"[galleon] API v{VERSION} starting — DB connected: {connected}")
+
+    # Auto-build BDC universe index if stale
+    try:
+        from bdc_index import is_stale  # type: ignore
+        if is_stale():
+            print("[galleon] BDC universe index is stale — triggering background build")
+            pipeline_id = str(uuid.uuid4())
+            _pipelines[pipeline_id] = {
+                "pipeline_id": pipeline_id,
+                "status": "running",
+                "type": "bdc_index",
+                "started_at": datetime.utcnow().isoformat(),
+            }
+            t = threading.Thread(
+                target=_run_bdc_index_background,
+                kwargs={"pipeline_id": pipeline_id},
+                daemon=True,
+            )
+            t.start()
+    except Exception as exc:
+        print(f"[galleon] BDC index startup check failed: {exc}")
 
 
 # ── Debug (temporary) ────────────────────────────────────────────────────────
@@ -180,6 +206,36 @@ def create_company(body: CompanyCreate):
     if not row:
         raise HTTPException(status_code=500, detail="Company created but not retrievable")
     return _company_row_to_out(row)
+
+
+@app.get("/companies/search", response_model=List[CompanySearchResult], tags=["companies"])
+def search_companies(q: str = "", limit: int = 10):
+    """
+    Fuzzy search the BDC universe by company name.
+    Returns EDGAR-sourced loan terms for matched portfolio companies.
+    """
+    if not q.strip():
+        return []
+    try:
+        from bdc_index import search_universe  # type: ignore
+        results = search_universe(q.strip(), top_k=limit)
+        return [
+            CompanySearchResult(
+                company_name=r.get("company_name", ""),
+                source_bdc=r.get("source_bdc", ""),
+                sector=r.get("sector"),
+                facility_type=r.get("facility_type"),
+                pricing_spread=r.get("pricing_spread"),
+                maturity_date=r.get("maturity_date"),
+                fair_value_usd=r.get("fair_value_usd"),
+                cost_basis_usd=r.get("cost_basis_usd"),
+                non_accrual=bool(r.get("non_accrual", False)),
+                match_confidence=float(r.get("match_confidence", 0.0)),
+            )
+            for r in results
+        ]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/companies/{company_id}", tags=["companies"])
@@ -579,6 +635,94 @@ def list_rules():
     return _static_rules()
 
 
+# ── BDC Universe ──────────────────────────────────────────────────────────────
+
+@app.get("/bdc/universe", response_model=List[BdcSummary], tags=["bdc"])
+def get_bdc_universe():
+    """Return list of all indexed BDCs with company counts."""
+    try:
+        from bdc_index import get_universe_summary, BDC_SEED  # type: ignore
+        summary = get_universe_summary()
+        bdcs = summary.get("bdcs", [])
+        if bdcs:
+            return [
+                BdcSummary(
+                    ticker=b["ticker"],
+                    name=b["name"],
+                    cik=b["cik"],
+                    company_count=b["company_count"],
+                    last_indexed=b.get("last_indexed"),
+                )
+                for b in bdcs
+            ]
+        # Seed list as fallback when index not yet built
+        return [
+            BdcSummary(ticker=ticker, name=ticker, cik=cik, company_count=0, last_indexed=None)
+            for ticker, cik in BDC_SEED.items()
+        ]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/bdc/index", tags=["bdc"])
+def trigger_bdc_index(background_tasks: BackgroundTasks, max_bdcs: int = 25):
+    """Trigger a background BDC universe index build. Returns {pipeline_id}."""
+    pipeline_id = str(uuid.uuid4())
+    _pipelines[pipeline_id] = {
+        "pipeline_id": pipeline_id,
+        "status": "running",
+        "type": "bdc_index",
+        "started_at": datetime.utcnow().isoformat(),
+    }
+    background_tasks.add_task(_run_bdc_index_background, pipeline_id=pipeline_id, max_bdcs=max_bdcs)
+    return {"pipeline_id": pipeline_id, "status": "running"}
+
+
+# ── Assistant ──────────────────────────────────────────────────────────────────
+
+@app.post("/assistant/chat", response_model=AssistantChatOut, tags=["assistant"])
+def assistant_chat(body: AssistantChatIn):
+    """
+    Send a message to the Galleon AI assistant.
+    Returns AI response with optional action and company matches.
+    """
+    try:
+        from .assistant import chat  # type: ignore
+        result = chat(
+            message=body.message,
+            conversation_id=body.conversation_id,
+            session_context=body.session_context or {},
+        )
+        # Convert raw match dicts to CompanySearchResult objects
+        raw_matches = result.get("company_matches")
+        matches = None
+        if raw_matches:
+            matches = [
+                CompanySearchResult(
+                    company_name=m.get("company_name", ""),
+                    source_bdc=m.get("source_bdc", ""),
+                    sector=m.get("sector"),
+                    facility_type=m.get("facility_type"),
+                    pricing_spread=m.get("pricing_spread"),
+                    maturity_date=m.get("maturity_date"),
+                    fair_value_usd=m.get("fair_value_usd"),
+                    cost_basis_usd=m.get("cost_basis_usd"),
+                    non_accrual=bool(m.get("non_accrual", False)),
+                    match_confidence=float(m.get("match_confidence", 0.0)),
+                )
+                for m in raw_matches
+            ]
+        return AssistantChatOut(
+            response=result["response"],
+            conversation_id=result["conversation_id"],
+            action=result.get("action"),
+            action_params=result.get("action_params") or {},
+            company_matches=matches,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 # ── Background tasks ──────────────────────────────────────────────────────────
 
 def _run_extraction_background(
@@ -632,6 +776,24 @@ def _run_extraction_background(
         _pipelines[pipeline_id].update(
             {"status": "failed", "error": str(exc), "completed_at": datetime.utcnow().isoformat()}
         )
+
+
+def _run_bdc_index_background(pipeline_id: str, max_bdcs: int = 25) -> None:
+    """Background task: build the BDC universe index from EDGAR."""
+    try:
+        from bdc_index import build_universe  # type: ignore
+        build_universe(max_bdcs=max_bdcs)
+        _pipelines[pipeline_id].update({
+            "status": "complete",
+            "completed_at": datetime.utcnow().isoformat(),
+        })
+    except Exception as exc:
+        print(f"[bdc_index] Build failed for {pipeline_id}: {exc}")
+        _pipelines[pipeline_id].update({
+            "status": "failed",
+            "error": str(exc),
+            "completed_at": datetime.utcnow().isoformat(),
+        })
 
 
 def _run_edgar_background(pipeline_id: str, live: bool) -> None:
