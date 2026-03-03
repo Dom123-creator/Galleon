@@ -150,11 +150,16 @@ def list_companies():
             or _company_id_to_name.get(cid)
             or (Path(mem["pdf_path"]).stem if "pdf_path" in mem else cid)
         )
+        fields_extracted = int(summary.get("fields_in_best") or 0)
+        # Rough completeness: fields extracted vs ~36 target schema fields
+        completeness = round(min(fields_extracted / 36 * 100, 100), 1) if fields_extracted else None
         seen[cid] = CompanySummary(
             id=cid,
             name=str(name),
             sector=bv.get("sector", {}).get("value"),
-            completeness=None,
+            completeness=completeness,
+            fields_extracted=fields_extracted,
+            pipeline_status=mem.get("status"),
             conflicts=int(summary.get("conflicts_detected", 0)),
             last_run=mem.get("started_at"),
         )

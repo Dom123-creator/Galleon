@@ -31,6 +31,8 @@ class CompanySummary(BaseModel):
     name: str
     sector: Optional[str] = None
     completeness: Optional[float] = None
+    fields_extracted: Optional[int] = None
+    pipeline_status: Optional[str] = None
     conflicts: int = 0
     last_run: Optional[str] = None
 

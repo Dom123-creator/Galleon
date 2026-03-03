@@ -470,26 +470,37 @@ export default function App() {
   // ── Data mappings: API → UI shape (with static fallbacks) ────────────────────
   const uiCompanies = useMemo(() => {
     if (!apiCompanies || apiCompanies.length === 0) return COMPANIES;
-    return apiCompanies.map(c => ({
-      id:       c.id,
-      name:     c.name,
-      sector:   c.sector || "—",
-      status:   (c.completeness || 0) >= 80 ? "complete"
-              : (c.completeness || 0) >= 50 ? "review"
-              : "processing",
-      score:    Math.round(c.completeness || 0),
-      leverage: "—", revenue: "—", ebitda: "—",
-      fields:   0,
-      conflicts: c.conflicts || 0,
-    }));
+    return apiCompanies.map(c => {
+      const pipelineDone = c.pipeline_status === "complete";
+      const completeness = c.completeness ?? 0;
+      const status = pipelineDone && completeness >= 80 ? "complete"
+                   : pipelineDone && completeness >= 50 ? "review"
+                   : pipelineDone                       ? "processed"
+                   : c.pipeline_status === "running"    ? "processing"
+                   : "pending";
+      return {
+        id:       c.id,
+        name:     c.name,
+        sector:   c.sector || "—",
+        status,
+        score:    Math.round(completeness),
+        leverage: "—", revenue: "—", ebitda: "—",
+        fields:   c.fields_extracted || 0,
+        conflicts: c.conflicts || 0,
+      };
+    });
   }, [apiCompanies]);
+
+  // Strip leading UUID prefix from stored filenames (e.g. "uuid_original.pdf" → "original.pdf")
+  const stripUuid = name => name.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/gi, "");
 
   const uiDocuments = useMemo(() => {
     if (!apiDocuments || apiDocuments.length === 0) return SOURCES;
     return apiDocuments.map(d => {
-      const ext = (d.filename || "").split(".").pop()?.toUpperCase() || "PDF";
+      const cleanName = stripUuid(d.filename || "");
+      const ext = cleanName.split(".").pop()?.toUpperCase() || "PDF";
       const typeMap = { PDF:"PDF", XLSX:"XLSX", DOCX:"DOCX", CSV:"CSV", JSON:"API", TXT:"TXT" };
-      return { id: d.id, name: d.filename, type: typeMap[ext] || ext, status: d.status, fields: d.fields_extracted || 0, conf: 0.90 };
+      return { id: d.id, name: cleanName, type: typeMap[ext] || ext, status: d.status, fields: d.fields_extracted || 0, conf: 0.90 };
     });
   }, [apiDocuments]);
 
