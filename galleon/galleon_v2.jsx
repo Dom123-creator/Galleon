@@ -965,7 +965,7 @@ export default function App() {
                   const filled   = fd ? true : rnd.filled;
                   const conf     = fd ? fd.confidence_score : (filled ? rnd.conf : 0);
                   const SRC_NAMES = ["Mgmt Financials.xlsx","CIM PDF","Bloomberg API","Loan Agreement"];
-                  const src      = fd ? (fd.source_document || fd.source_type || "API") : SRC_NAMES[rnd.srcIdx];
+                  const src      = fd ? stripUuid(fd.source_document || fd.source_type || "API") : SRC_NAMES[rnd.srcIdx];
                   const displayVal = fd ? fd.normalized_value : (
                     field.includes("ratio")||field.includes("margin")||field.includes("coverage") ? `${(1.5+rnd.conf*5).toFixed(1)}x` :
                     field.includes("date")    ? "2028-06-30" :
