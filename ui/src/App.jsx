@@ -418,6 +418,20 @@ export default function App() {
     });
   }, [apiGT]);
 
+  // ── Auto-select first API company when data loads (replaces static default) ───
+  useEffect(() => {
+    if (!apiCompanies || apiCompanies.length === 0) return;
+    if (company && !/^C\d$/.test(company.id)) return; // already on a real company
+    const first = apiCompanies[0];
+    setCompany({
+      id: first.id, name: first.name, sector: first.sector || "—",
+      status: first.pipeline_status === "complete" ? "complete" : "processing",
+      score: Math.round(first.completeness || 0),
+      leverage: "—", revenue: "—", ebitda: "—",
+      fields: first.fields_extracted || 0, conflicts: first.conflicts || 0,
+    });
+  }, [apiCompanies]);
+
   // ── Fetch fields when company changes (skip static dummies) ──────────────────
   useEffect(() => {
     setCompanyFields([]);
@@ -1013,7 +1027,7 @@ export default function App() {
                   <tr key={i}>
                     <td style={{ ...S.td, color:T.gold, fontFamily:"'DM Mono', monospace" }}>{f.field_name}</td>
                     <td style={{ ...S.td, fontWeight:600, fontFamily:"'DM Mono', monospace" }}>{f.normalized_value || "—"}</td>
-                    <td style={S.td}><Badge label={f.source_document || f.source_type || "—"} color={T.gold}/></td>
+                    <td style={S.td}><Badge label={stripUuid(f.source_document || f.source_type || "—")} color={T.gold}/></td>
                     <td style={{ ...S.td, fontSize:11, color:T.muted, fontFamily:"'DM Mono', monospace" }}>p.{f.source_page || "—"}</td>
                     <td style={{ ...S.td, fontSize:11 }}>{f.extraction_method || "—"}</td>
                     <td style={{ ...S.td, fontFamily:"'DM Mono', monospace", color:f.rule_id?T.green:T.amber }}>{f.rule_id || "—"}</td>
