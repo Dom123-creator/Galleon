@@ -506,7 +506,8 @@ export default function App() {
   }, [apiCompanies]);
 
   // Strip leading UUID prefix from stored filenames (e.g. "uuid_original.pdf" → "original.pdf")
-  const stripUuid = name => name.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/gi, "");
+  const UUID_PREFIX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/i;
+  const stripUuid = name => { let s = name; while (UUID_PREFIX.test(s)) s = s.replace(UUID_PREFIX, ""); return s; };
 
   const uiDocuments = useMemo(() => {
     if (!apiDocuments || apiDocuments.length === 0) return SOURCES;
