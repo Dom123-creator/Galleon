@@ -1,0 +1,571 @@
+// Galleon Database Schema
+// Production-ready schema for AI-powered private credit intelligence platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+enum UserRole {
+  ANALYST
+  PROFESSIONAL
+  ENTERPRISE
+  ADMIN
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+  TRIALING
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  PAUSED
+}
+
+enum SubscriptionTier {
+  ANALYST
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+model User {
+  id                   String             @id @default(cuid())
+  clerkId              String             @unique
+  email                String             @unique
+  name                 String?
+  imageUrl             String?
+  role                 UserRole           @default(ANALYST)
+  organizationName     String?
+
+  // Stripe Integration
+  stripeCustomerId     String?            @unique
+  subscriptionStatus   SubscriptionStatus @default(ACTIVE)
+  subscriptionTier     SubscriptionTier   @default(ANALYST)
+
+  // Usage Tracking (for analyst tier limits)
+  monthlyMissionsUsed  Int                @default(0)
+  lastUsageReset       DateTime           @default(now())
+
+  // Email Preferences
+  emailNotifications   Boolean            @default(true)
+  newContentAlerts     Boolean            @default(true)
+
+  // Timestamps
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  // Relations
+  subscription         Subscription?
+  deals                Deal[]
+  documents            Document[]
+  missions             Mission[]
+  dataSources          DataSource[]
+  dealBookmarks        DealBookmark[]
+  activityLogs         ActivityLog[]
+
+  @@index([clerkId])
+  @@index([email])
+  @@index([stripeCustomerId])
+}
+
+model Subscription {
+  id                    String             @id @default(cuid())
+  userId                String             @unique
+  user                  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Stripe Data
+  stripeSubscriptionId  String             @unique
+  stripePriceId         String
+  stripeProductId       String
+
+  // Status
+  status                SubscriptionStatus @default(ACTIVE)
+  tier                  SubscriptionTier
+
+  // Billing Period
+  currentPeriodStart    DateTime
+  currentPeriodEnd      DateTime
+  cancelAtPeriodEnd     Boolean            @default(false)
+  canceledAt            DateTime?
+
+  // Trial
+  trialStart            DateTime?
+  trialEnd              DateTime?
+
+  // Timestamps
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  @@index([stripeSubscriptionId])
+  @@index([userId])
+}
+
+// ============================================
+// DEAL INTELLIGENCE
+// ============================================
+
+enum DealStatus {
+  PROSPECT
+  UNDER_REVIEW
+  ACTIVE_RESEARCH
+  AUDIT_COMPLETE
+  ARCHIVED
+}
+
+enum DealSector {
+  DIRECT_LENDING
+  DISTRESSED_DEBT
+  MEZZANINE
+  VENTURE_DEBT
+  REAL_ESTATE_DEBT
+  INFRASTRUCTURE_DEBT
+  CLO
+  SPECIALTY_FINANCE
+  ASSET_BACKED
+  OTHER
+}
+
+model Deal {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Content
+  name            String
+  slug            String        @unique
+  description     String?       @db.Text
+  borrowerName    String?
+  lenderName      String?
+  dealSize        Decimal?      @db.Decimal(15, 2)
+  currency        String        @default("USD")
+  sector          DealSector    @default(OTHER)
+  status          DealStatus    @default(PROSPECT)
+  tags            String[]
+  sourceUrl       String?
+  externalId      String?
+
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  documents       Document[]
+  missions        Mission[]
+  bookmarks       DealBookmark[]
+  findings        Finding[]
+
+  @@index([slug])
+  @@index([userId])
+  @@index([sector])
+  @@index([status])
+}
+
+// ============================================
+// DOCUMENT MANAGEMENT
+// ============================================
+
+enum DocumentType {
+  TERM_SHEET
+  CREDIT_MEMO
+  FINANCIAL_STATEMENT
+  UCC_FILING
+  COURT_RECORD
+  NEWS_ARTICLE
+  REGULATORY_FILING
+  PROSPECTUS
+  PITCH_DECK
+  SPREADSHEET
+  OTHER
+}
+
+enum DocumentSource {
+  USER_UPLOAD
+  AGENT_SCRAPED
+  API_INTEGRATION
+  HYBRID
+}
+
+enum DocumentStatus {
+  UPLOADING
+  PROCESSING
+  PARSED
+  INDEXED
+  FAILED
+}
+
+model Document {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dealId           String?
+  deal             Deal?           @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  // File Info
+  fileName         String
+  fileUrl          String
+  fileKey          String
+  fileSize         Int
+  mimeType         String
+  pageCount        Int?
+
+  // Classification
+  documentType     DocumentType    @default(OTHER)
+  source           DocumentSource  @default(USER_UPLOAD)
+  status           DocumentStatus  @default(UPLOADING)
+
+  // Parsed Content
+  parsedContent    String?         @db.Text
+  parsedMetadata   Json?
+  embeddingId      String?
+  processingError  String?         @db.Text
+
+  // Timestamps
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  // Relations
+  findings         Finding[]
+
+  @@index([userId])
+  @@index([dealId])
+  @@index([documentType])
+  @@index([status])
+}
+
+// ============================================
+// MISSION & AGENT SYSTEM
+// ============================================
+
+enum MissionStatus {
+  DRAFT
+  QUEUED
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+enum MissionMode {
+  AUTONOMOUS
+  INTERACTIVE
+}
+
+enum AgentType {
+  RESEARCH
+  AUDITOR
+  MASTER
+}
+
+enum AgentTaskStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+model Mission {
+  id                String         @id @default(cuid())
+  userId            String
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dealId            String?
+  deal              Deal?          @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  // Mission Definition
+  title             String
+  objective         String         @db.Text
+  successCriteria   String?        @db.Text
+  scope             Json?
+
+  // Execution
+  mode              MissionMode    @default(AUTONOMOUS)
+  status            MissionStatus  @default(DRAFT)
+  startedAt         DateTime?
+  completedAt       DateTime?
+
+  // Results
+  summary           String?        @db.Text
+  recommendation    String?        @db.Text
+  confidenceScore   Decimal?       @db.Decimal(3, 2)
+  reportUrl         String?
+
+  // Usage Tracking
+  totalTokensUsed   Int            @default(0)
+  totalApiCalls     Int            @default(0)
+
+  // Timestamps
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  // Relations
+  agentTasks        AgentTask[]
+  findings          Finding[]
+  chatMessages      ChatMessage[]
+
+  @@index([userId])
+  @@index([dealId])
+  @@index([status])
+}
+
+model AgentTask {
+  id               String          @id @default(cuid())
+  missionId        String
+  mission          Mission         @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  // Task Definition
+  agentType        AgentType
+  taskDescription  String          @db.Text
+  toolCalls        Json?
+  sequenceNumber   Int             @default(0)
+
+  // Execution
+  status           AgentTaskStatus @default(PENDING)
+  startedAt        DateTime?
+  completedAt      DateTime?
+
+  // Results
+  result           Json?
+  error            String?         @db.Text
+  tokensUsed       Int             @default(0)
+
+  // Hierarchy
+  parentTaskId     String?
+  parentTask       AgentTask?      @relation("TaskHierarchy", fields: [parentTaskId], references: [id])
+  childTasks       AgentTask[]     @relation("TaskHierarchy")
+
+  // Timestamps
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([missionId])
+  @@index([agentType])
+  @@index([status])
+  @@index([parentTaskId])
+}
+
+// ============================================
+// FINDINGS & INTELLIGENCE
+// ============================================
+
+enum FindingConfidence {
+  HIGH
+  MEDIUM
+  LOW
+  UNVERIFIED
+}
+
+model Finding {
+  id               String              @id @default(cuid())
+  missionId        String?
+  mission          Mission?            @relation(fields: [missionId], references: [id], onDelete: SetNull)
+  dealId           String?
+  deal             Deal?               @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  documentId       String?
+  document         Document?           @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  // Content
+  title            String
+  content          String              @db.Text
+  category         String?
+  confidence       FindingConfidence   @default(UNVERIFIED)
+
+  // Source Attribution
+  sourceText       String?             @db.Text
+  sourcePage       Int?
+  sourceUrl        String?
+
+  // Audit Trail
+  verifiedBy       String?
+  verifiedAt       DateTime?
+  auditNotes       String?             @db.Text
+  isFlagged        Boolean             @default(false)
+  flagReason       String?
+
+  // Timestamps
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([missionId])
+  @@index([dealId])
+  @@index([documentId])
+  @@index([confidence])
+}
+
+// ============================================
+// COMMAND CENTER
+// ============================================
+
+model ChatMessage {
+  id               String         @id @default(cuid())
+  missionId        String
+  mission          Mission        @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  // Message
+  role             String         // "user" | "assistant" | "system"
+  content          String         @db.Text
+  metadata         Json?
+
+  // Timestamps
+  createdAt        DateTime       @default(now())
+
+  @@index([missionId])
+  @@index([createdAt])
+}
+
+// ============================================
+// DATA SOURCES
+// ============================================
+
+enum DataSourceType {
+  UCC_FILINGS
+  COURT_RECORDS
+  SEC_EDGAR
+  NEWS_SCRAPER
+  PREQIN
+  SP_LCD
+  LSEG
+  CUSTOM_API
+}
+
+model DataSource {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Configuration
+  name             String
+  type             DataSourceType
+  status           String          @default("inactive") // active, inactive, error
+  config           Json?           // encrypted at rest
+
+  // Sync State
+  lastSyncAt       DateTime?
+  lastError        String?         @db.Text
+
+  // Timestamps
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([type])
+}
+
+// ============================================
+// USER ENGAGEMENT
+// ============================================
+
+model DealBookmark {
+  id        String   @id @default(cuid())
+  userId    String
+  dealId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  note      String?  @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, dealId])
+  @@index([userId])
+  @@index([dealId])
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Activity
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType])
+  @@index([createdAt])
+}
+
+// ============================================
+// ANALYTICS
+// ============================================
+
+model AnalyticsEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  eventType String
+  eventData Json
+
+  // Context
+  page      String?
+  referrer  String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([eventType])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model DailyMetrics {
+  id              String   @id @default(cuid())
+  date            DateTime @unique @db.Date
+
+  // User Metrics
+  newUsers        Int      @default(0)
+  activeUsers     Int      @default(0)
+
+  // Subscription Metrics
+  newSubscribers  Int      @default(0)
+  churnedUsers    Int      @default(0)
+  trialStarts     Int      @default(0)
+  trialConversions Int     @default(0)
+
+  // Revenue
+  mrr             Decimal  @default(0) @db.Decimal(10, 2)
+  newRevenue      Decimal  @default(0) @db.Decimal(10, 2)
+
+  // Platform Metrics
+  totalMissions   Int      @default(0)
+  totalFindings   Int      @default(0)
+  totalDocuments  Int      @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([date])
+}
+
+// ============================================
+// WEBHOOK EVENTS (for idempotency)
+// ============================================
+
+model WebhookEvent {
+  id              String   @id @default(cuid())
+  stripeEventId   String   @unique
+  eventType       String
+  processed       Boolean  @default(false)
+  processedAt     DateTime?
+  error           String?  @db.Text
+  payload         Json
+
+  createdAt       DateTime @default(now())
+
+  @@index([stripeEventId])
+  @@index([eventType])
+  @@index([processed])
+}
