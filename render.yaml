@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: galleon
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: EDGAR_USER_AGENT
+        value: Galleon Research contact@galleon.io
+    disk:
+      name: galleon-data
+      mountPath: /app/galleon/data
+      sizeGB: 1
+    healthCheckPath: /health
