@@ -123,6 +123,18 @@ export const AGENT_TOOLS: Record<string, Anthropic.Tool[]> = {
         required: ["title", "content", "confidence"],
       },
     },
+    {
+      name: "search_bdc_portfolio",
+      description: "Search BDC portfolio companies by name or sector. Returns deal terms, fair values, and risk flags from ARCC and other BDC schedules of investments.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          query: { type: "string", description: "Company name or sector to search" },
+          top_k: { type: "number", description: "Number of results to return (default 5)" },
+        },
+        required: ["query"],
+      },
+    },
   ],
   AUDITOR: [
     {

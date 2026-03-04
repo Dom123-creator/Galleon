@@ -1,3 +1,5 @@
+import { searchEdgarFullText } from "./edgar-client";
+
 interface ToolCallResult {
   content: string;
   is_error?: boolean;
@@ -8,8 +10,6 @@ export async function scrapePublicRecords(
   query: string,
   entityName?: string
 ): Promise<ToolCallResult> {
-  // These are stub implementations that would connect to real APIs
-  // In production, each source would have its own integration
   switch (source) {
     case "ucc":
       return {
@@ -49,39 +49,20 @@ async function searchEdgar(
   entityName?: string
 ): Promise<ToolCallResult> {
   try {
-    // SEC EDGAR full-text search API
-    const searchUrl = `https://efts.sec.gov/LATEST/search-index?q=${encodeURIComponent(query)}&dateRange=custom&startdt=${getDateDaysAgo(365)}&enddt=${getDateToday()}&forms=10-K,10-Q,8-K,S-1`;
+    const results = await searchEdgarFullText(query);
 
-    const response = await fetch(searchUrl, {
-      headers: {
-        "User-Agent": "Galleon/1.0 (support@galleon.ai)",
-        Accept: "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      return {
-        content: JSON.stringify({
-          source: "SEC EDGAR",
-          query,
-          note: "SEC EDGAR search returned non-200 status. Results may be limited.",
-          results: [],
-        }),
-      };
-    }
-
-    const data = await response.json();
     return {
       content: JSON.stringify({
         source: "SEC EDGAR",
         query,
         entityName,
-        total: data.hits?.total?.value || 0,
-        results: (data.hits?.hits || []).slice(0, 10).map((hit: Record<string, unknown>) => ({
-          title: (hit._source as Record<string, unknown>)?.display_names,
-          form: (hit._source as Record<string, unknown>)?.form_type,
-          filedAt: (hit._source as Record<string, unknown>)?.file_date,
-          url: `https://www.sec.gov/Archives/edgar/data/${(hit._source as Record<string, unknown>)?.entity_id}`,
+        total: results.length,
+        results: results.map((r) => ({
+          title: r.title,
+          form: r.form,
+          filedAt: r.filedAt,
+          entityName: r.entityName,
+          url: r.url,
         })),
       }),
     };
@@ -111,14 +92,4 @@ export async function searchNews(
       results: [],
     }),
   };
-}
-
-function getDateToday(): string {
-  return new Date().toISOString().split("T")[0];
-}
-
-function getDateDaysAgo(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return date.toISOString().split("T")[0];
 }
