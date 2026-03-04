@@ -15,25 +15,25 @@ function isClerkConfigured(): boolean {
   );
 }
 
-// Conditional SignedIn - shows children when authenticated OR when Clerk isn't configured
+// Conditional SignedIn - shows children when authenticated OR when Clerk isn't configured (dev mode)
 export function SignedIn({ children }: { children: ReactNode }) {
   if (!isClerkConfigured()) {
-    // When Clerk isn't configured, don't show authenticated content
-    return null;
+    // Dev mode: treat as signed in
+    return <>{children}</>;
   }
   return <ClerkSignedIn>{children}</ClerkSignedIn>;
 }
 
-// Conditional SignedOut - shows children when not authenticated OR when Clerk isn't configured
+// Conditional SignedOut - shows children when not authenticated
 export function SignedOut({ children }: { children: ReactNode }) {
   if (!isClerkConfigured()) {
-    // When Clerk isn't configured, show sign-in/sign-up buttons
-    return <>{children}</>;
+    // Dev mode: treat as signed in, hide sign-out content
+    return null;
   }
   return <ClerkSignedOut>{children}</ClerkSignedOut>;
 }
 
-// Conditional UserButton - only renders when Clerk is configured
+// Conditional UserButton - shows dev indicator when Clerk isn't configured
 interface UserButtonProps {
   afterSignOutUrl?: string;
   appearance?: {
@@ -45,7 +45,13 @@ interface UserButtonProps {
 
 export function UserButton(props: UserButtonProps) {
   if (!isClerkConfigured()) {
-    return null;
+    return (
+      <div className="flex items-center gap-2">
+        <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
+          D
+        </div>
+      </div>
+    );
   }
   return <ClerkUserButton {...props} />;
 }

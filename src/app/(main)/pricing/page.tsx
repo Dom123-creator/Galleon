@@ -1,6 +1,6 @@
 import { Metadata } from "next";
 import { Check, X } from "lucide-react";
-import { auth } from "@clerk/nextjs/server";
+import { getAuthUserId as auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { SUBSCRIPTION_TIERS } from "@/lib/stripe";
 import { cn } from "@/lib/utils";

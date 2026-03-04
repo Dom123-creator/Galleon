@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
+import { getAuthUserId as auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
   Card,
