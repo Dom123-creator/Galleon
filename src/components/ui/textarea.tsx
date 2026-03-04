@@ -17,7 +17,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         {label && (
           <label
             htmlFor={textareaId}
-            className="mb-1.5 block text-sm font-medium text-slate-700"
+            className="mb-1.5 block text-xs font-medium font-mono tracking-wide text-muted uppercase"
           >
             {label}
           </label>
@@ -25,13 +25,13 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         <textarea
           id={textareaId}
           className={cn(
-            "flex min-h-[100px] w-full rounded-lg border bg-white px-3 py-2 text-sm transition-colors",
-            "placeholder:text-slate-400",
-            "focus:outline-none focus:ring-2 focus:ring-offset-0",
+            "flex min-h-[100px] w-full rounded-lg border bg-navy-3 px-3 py-2 text-sm text-cream-2 transition-colors font-mono",
+            "placeholder:text-muted-2",
+            "focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-offset-navy",
             error
-              ? "border-red-500 focus:border-red-500 focus:ring-red-200"
-              : "border-slate-300 focus:border-blue-500 focus:ring-blue-200",
-            "disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-50",
+              ? "border-g-red focus:border-g-red focus:ring-g-red/20"
+              : "border-border focus:border-gold focus:ring-gold/20",
+            "disabled:cursor-not-allowed disabled:opacity-40",
             "resize-y",
             className
           )}
@@ -43,14 +43,14 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         {error && (
           <p
             id={`${textareaId}-error`}
-            className="mt-1.5 text-sm text-red-600"
+            className="mt-1.5 text-sm text-g-red"
             role="alert"
           >
             {error}
           </p>
         )}
         {helperText && !error && (
-          <p className="mt-1.5 text-sm text-slate-500">{helperText}</p>
+          <p className="mt-1.5 text-sm text-muted">{helperText}</p>
         )}
       </div>
     );

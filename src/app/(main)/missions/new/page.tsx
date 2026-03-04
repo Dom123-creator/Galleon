@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,6 +13,9 @@ interface DealOption {
   id: string;
   name: string;
 }
+
+const selectClasses =
+  "w-full rounded-lg border border-border bg-navy-3 px-3 py-2 text-sm text-cream-2 font-mono focus:outline-none focus:ring-2 focus:ring-gold/20 focus:border-gold";
 
 export default function NewMissionPage() {
   const router = useRouter();
@@ -40,9 +42,7 @@ export default function NewMissionPage() {
           setDeals(data.map((d: { id: string; name: string }) => ({ id: d.id, name: d.name })));
         }
       })
-      .catch(() => {
-        // Silently fail - deals dropdown will be empty
-      });
+      .catch(() => {});
   }, []);
 
   function updateField(field: string, value: string) {
@@ -84,151 +84,143 @@ export default function NewMissionPage() {
   }
 
   return (
-    <div className="bg-slate-50 min-h-screen">
-      <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:px-8">
-        <Link
-          href="/missions"
-          className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 mb-6"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Missions
-        </Link>
+    <div className="mx-auto max-w-2xl px-6 py-8 lg:px-9">
+      <Link
+        href="/missions"
+        className="inline-flex items-center gap-1 text-xs font-mono text-muted hover:text-gold transition-colors mb-6"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Back to Missions
+      </Link>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Create New Mission</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {error && (
-                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-800">
-                  {error}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Mission Title <span className="text-red-500">*</span>
-                </label>
-                <Input
-                  value={form.title}
-                  onChange={(e) => updateField("title", e.target.value)}
-                  placeholder="e.g., Due Diligence Review - Acme Corp"
-                  required
-                />
+      <div className="rounded-lg border border-border bg-navy-2 overflow-hidden">
+        <div className="border-b border-border px-6 py-4">
+          <h1 className="section-title">Create New Mission</h1>
+        </div>
+        <div className="p-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {error && (
+              <div className="rounded-lg border border-g-red/30 bg-g-red/10 p-3 text-sm text-g-red">
+                {error}
               </div>
+            )}
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Objective <span className="text-red-500">*</span>
-                </label>
-                <Textarea
-                  value={form.objective}
-                  onChange={(e) => updateField("objective", e.target.value)}
-                  placeholder="Describe what you want the AI agents to research and analyze..."
-                  rows={4}
-                  required
-                />
-              </div>
+            <div>
+              <label className="label-mono block mb-1.5">
+                Mission Title <span className="text-g-red">*</span>
+              </label>
+              <Input
+                value={form.title}
+                onChange={(e) => updateField("title", e.target.value)}
+                placeholder="e.g., Due Diligence Review - Acme Corp"
+                required
+              />
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Success Criteria
-                </label>
-                <Textarea
-                  value={form.successCriteria}
-                  onChange={(e) =>
-                    updateField("successCriteria", e.target.value)
-                  }
-                  placeholder="What does a successful mission look like? e.g., Identify all covenant terms, flag any red flags..."
-                  rows={3}
-                />
-              </div>
+            <div>
+              <label className="label-mono block mb-1.5">
+                Objective <span className="text-g-red">*</span>
+              </label>
+              <Textarea
+                value={form.objective}
+                onChange={(e) => updateField("objective", e.target.value)}
+                placeholder="Describe what you want the AI agents to research and analyze..."
+                rows={4}
+                required
+              />
+            </div>
 
-              {/* Mode Selection */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-3">
-                  Mission Mode <span className="text-red-500">*</span>
-                </label>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => updateField("mode", "AUTONOMOUS")}
-                    className={cn(
-                      "rounded-xl border-2 p-4 text-left transition-colors",
-                      form.mode === "AUTONOMOUS"
-                        ? "border-blue-600 bg-blue-50"
-                        : "border-slate-200 hover:border-blue-300"
-                    )}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <Compass className="h-5 w-5 text-blue-600" />
-                      <span className="font-semibold text-slate-900">
-                        Autonomous
-                      </span>
-                    </div>
-                    <p className="text-sm text-slate-600">
-                      Agents run independently and deliver a final report.
-                    </p>
-                  </button>
+            <div>
+              <label className="label-mono block mb-1.5">Success Criteria</label>
+              <Textarea
+                value={form.successCriteria}
+                onChange={(e) => updateField("successCriteria", e.target.value)}
+                placeholder="What does a successful mission look like?"
+                rows={3}
+              />
+            </div>
 
-                  <button
-                    type="button"
-                    onClick={() => updateField("mode", "INTERACTIVE")}
-                    className={cn(
-                      "rounded-xl border-2 p-4 text-left transition-colors",
-                      form.mode === "INTERACTIVE"
-                        ? "border-purple-600 bg-purple-50"
-                        : "border-slate-200 hover:border-purple-300"
-                    )}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <Monitor className="h-5 w-5 text-purple-600" />
-                      <span className="font-semibold text-slate-900">
-                        Interactive
-                      </span>
-                    </div>
-                    <p className="text-sm text-slate-600">
-                      Guide agents in real-time via the Command Center.
-                    </p>
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Associated Deal
-                </label>
-                <select
-                  value={form.dealId}
-                  onChange={(e) => updateField("dealId", e.target.value)}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  <option value="">No deal selected</option>
-                  {deals.map((deal) => (
-                    <option key={deal.id} value={deal.id}>
-                      {deal.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <Link href="/missions">
-                  <Button type="button" variant="outline">
-                    Cancel
-                  </Button>
-                </Link>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting && (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            {/* Mode Selection */}
+            <div>
+              <label className="label-mono block mb-3">
+                Mission Mode <span className="text-g-red">*</span>
+              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => updateField("mode", "AUTONOMOUS")}
+                  className={cn(
+                    "rounded-lg border-2 p-4 text-left transition-all",
+                    form.mode === "AUTONOMOUS"
+                      ? "border-g-blue bg-g-blue/5"
+                      : "border-border hover:border-border-2"
                   )}
-                  Create Mission
-                </Button>
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Compass className="h-4 w-4 text-g-blue" />
+                    <span className="font-mono text-xs font-bold tracking-wide text-cream-2">
+                      Autonomous
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted">
+                    Agents run independently and deliver a final report.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => updateField("mode", "INTERACTIVE")}
+                  className={cn(
+                    "rounded-lg border-2 p-4 text-left transition-all",
+                    form.mode === "INTERACTIVE"
+                      ? "border-g-purple bg-g-purple/5"
+                      : "border-border hover:border-border-2"
+                  )}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Monitor className="h-4 w-4 text-g-purple" />
+                    <span className="font-mono text-xs font-bold tracking-wide text-cream-2">
+                      Interactive
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted">
+                    Guide agents in real-time via the Command Center.
+                  </p>
+                </button>
               </div>
-            </form>
-          </CardContent>
-        </Card>
+            </div>
+
+            <div>
+              <label className="label-mono block mb-1.5">Associated Deal</label>
+              <select
+                value={form.dealId}
+                onChange={(e) => updateField("dealId", e.target.value)}
+                className={selectClasses}
+              >
+                <option value="">No deal selected</option>
+                {deals.map((deal) => (
+                  <option key={deal.id} value={deal.id}>
+                    {deal.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-border">
+              <Link href="/missions">
+                <Button type="button" variant="outline">
+                  Cancel
+                </Button>
+              </Link>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting && (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                )}
+                Create Mission
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

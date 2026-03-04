@@ -6,29 +6,29 @@ import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-semibold font-mono tracking-wide transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/50 focus-visible:ring-offset-2 focus-visible:ring-offset-navy disabled:pointer-events-none disabled:opacity-40",
   {
     variants: {
       variant: {
         default:
-          "bg-slate-900 text-white hover:bg-slate-800 focus-visible:ring-slate-900",
+          "bg-gold text-navy hover:bg-gold-2 active:bg-gold-3",
         primary:
-          "bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-600",
+          "bg-gold text-navy hover:bg-gold-2 active:bg-gold-3",
         destructive:
-          "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600",
+          "bg-g-red/20 text-g-red border border-g-red/30 hover:bg-g-red/30",
         outline:
-          "border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 focus-visible:ring-slate-400",
+          "border border-border-2 bg-transparent text-cream-2 hover:bg-navy-3 hover:border-muted-2",
         secondary:
-          "bg-slate-100 text-slate-900 hover:bg-slate-200 focus-visible:ring-slate-400",
+          "bg-navy-3 text-cream-2 border border-border hover:bg-navy-4",
         ghost:
-          "text-slate-700 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-slate-400",
-        link: "text-blue-600 underline-offset-4 hover:underline focus-visible:ring-blue-600",
+          "text-muted hover:bg-navy-3 hover:text-cream-2",
+        link: "text-gold underline-offset-4 hover:underline",
         success:
-          "bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:ring-emerald-600",
+          "bg-g-green/20 text-g-green border border-g-green/30 hover:bg-g-green/30",
       },
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-9 px-3 text-xs",
+        default: "h-10 px-5 py-2",
+        sm: "h-8 px-3 text-xs",
         lg: "h-12 px-8 text-base",
         xl: "h-14 px-10 text-lg",
         icon: "h-10 w-10",

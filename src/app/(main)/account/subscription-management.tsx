@@ -35,7 +35,6 @@ export function SubscriptionManagement({
         throw new Error(data.error || "Failed to open billing portal");
       }
 
-      // Redirect to Stripe Customer Portal
       window.location.href = data.url;
     } catch (error) {
       addToast({
@@ -76,7 +75,6 @@ export function SubscriptionManagement({
         description: data.message,
       });
 
-      // Refresh the page to show updated status
       window.location.reload();
     } catch (error) {
       addToast({
@@ -114,7 +112,6 @@ export function SubscriptionManagement({
         description: data.message,
       });
 
-      // Refresh the page to show updated status
       window.location.reload();
     } catch (error) {
       addToast({
@@ -129,10 +126,9 @@ export function SubscriptionManagement({
     }
   };
 
-  // Free tier - show upgrade button
   if (tier === "FREE") {
     return (
-      <div className="pt-4 border-t border-slate-200 mt-4">
+      <div className="pt-4 border-t border-border mt-4">
         <Link href="/pricing">
           <Button variant="primary" className="w-full sm:w-auto">
             Upgrade to Premium
@@ -142,9 +138,8 @@ export function SubscriptionManagement({
     );
   }
 
-  // Has subscription - show management options
   return (
-    <div className="pt-4 border-t border-slate-200 mt-4 flex flex-wrap gap-3">
+    <div className="pt-4 border-t border-border mt-4 flex flex-wrap gap-3">
       <Button
         variant="outline"
         onClick={handleManageSubscription}
@@ -166,7 +161,7 @@ export function SubscriptionManagement({
       ) : (
         <Button
           variant="ghost"
-          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+          className="text-g-red hover:text-g-red hover:bg-g-red/10"
           onClick={handleCancelSubscription}
           isLoading={isLoading && action === "cancel"}
           disabled={isLoading}

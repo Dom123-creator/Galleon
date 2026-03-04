@@ -86,22 +86,20 @@ export function AccountSettings({
       />
 
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-slate-900">
-          Email Preferences
-        </h4>
+        <h4 className="label-mono">Email Preferences</h4>
 
         <label className="flex items-center gap-3 cursor-pointer">
           <input
             type="checkbox"
             checked={emailNotifications}
             onChange={(e) => setEmailNotifications(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-border bg-navy-3 text-gold focus:ring-gold/30"
           />
           <div>
-            <span className="text-sm font-medium text-slate-700">
+            <span className="text-sm text-cream-2">
               Email notifications
             </span>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted">
               Receive updates about your subscription and account
             </p>
           </div>
@@ -112,14 +110,14 @@ export function AccountSettings({
             type="checkbox"
             checked={newContentAlerts}
             onChange={(e) => setNewContentAlerts(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-border bg-navy-3 text-gold focus:ring-gold/30"
           />
           <div>
-            <span className="text-sm font-medium text-slate-700">
+            <span className="text-sm text-cream-2">
               New content alerts
             </span>
-            <p className="text-xs text-slate-500">
-              Get notified when new stories are published
+            <p className="text-xs text-muted">
+              Get notified when new findings are published
             </p>
           </div>
         </label>

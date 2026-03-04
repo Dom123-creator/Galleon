@@ -2,7 +2,6 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, FileText, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -74,83 +73,81 @@ export function DocumentUploadArea() {
   }
 
   return (
-    <Card className="mb-8">
-      <CardContent className="p-6">
-        {/* Drop Zone */}
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={cn(
-            "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors",
-            isDragging
-              ? "border-blue-500 bg-blue-50"
-              : "border-slate-300 hover:border-blue-400 hover:bg-slate-50"
-          )}
-        >
-          <Upload className="h-10 w-10 text-slate-400 mx-auto mb-3" />
-          <p className="text-sm font-medium text-slate-700">
-            Drop files here or click to browse
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
-            PDF, DOCX, XLSX, CSV, and TXT files supported
-          </p>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept=".pdf,.docx,.xlsx,.csv,.txt,.doc,.xls"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-        </div>
-
-        {/* Selected Files */}
-        {selectedFiles.length > 0 && (
-          <div className="mt-4 space-y-2">
-            {selectedFiles.map((file, index) => (
-              <div
-                key={`${file.name}-${index}`}
-                className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileText className="h-4 w-4 text-slate-400 shrink-0" />
-                  <span className="text-sm text-slate-700 truncate">
-                    {file.name}
-                  </span>
-                  <span className="text-xs text-slate-400">
-                    ({(file.size / 1024).toFixed(0)} KB)
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeFile(index)}
-                  className="text-slate-400 hover:text-red-500"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-
-            {error && (
-              <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-800">
-                {error}
-              </div>
-            )}
-
-            <div className="flex justify-end pt-2">
-              <Button onClick={handleUpload} disabled={uploading}>
-                {uploading && (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                )}
-                Upload {selectedFiles.length} file
-                {selectedFiles.length !== 1 && "s"}
-              </Button>
-            </div>
-          </div>
+    <div className="rounded-lg border border-border bg-navy-2 p-5 mb-8">
+      {/* Drop Zone */}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className={cn(
+          "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors",
+          isDragging
+            ? "border-gold bg-gold/5"
+            : "border-border hover:border-gold/30"
         )}
-      </CardContent>
-    </Card>
+      >
+        <Upload className="h-8 w-8 text-muted-2 mx-auto mb-3" />
+        <p className="font-mono text-xs font-semibold text-cream-2">
+          Drop files here or click to browse
+        </p>
+        <p className="text-[11px] text-muted mt-1">
+          PDF, DOCX, XLSX, CSV, and TXT files supported
+        </p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.docx,.xlsx,.csv,.txt,.doc,.xls"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+      </div>
+
+      {/* Selected Files */}
+      {selectedFiles.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {selectedFiles.map((file, index) => (
+            <div
+              key={`${file.name}-${index}`}
+              className="flex items-center justify-between rounded-lg border border-border/50 bg-navy-3/30 px-3 py-2"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="h-3.5 w-3.5 text-muted-2 shrink-0" />
+                <span className="text-xs font-mono text-cream-2 truncate">
+                  {file.name}
+                </span>
+                <span className="text-[11px] text-muted">
+                  ({(file.size / 1024).toFixed(0)} KB)
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => removeFile(index)}
+                className="text-muted hover:text-g-red transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+
+          {error && (
+            <div className="rounded-lg border border-g-red/30 bg-g-red/10 p-3 text-sm text-g-red">
+              {error}
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <Button onClick={handleUpload} disabled={uploading}>
+              {uploading && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              Upload {selectedFiles.length} file
+              {selectedFiles.length !== 1 && "s"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

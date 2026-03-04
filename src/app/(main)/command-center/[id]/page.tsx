@@ -3,12 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,11 +14,11 @@ import {
   AlertTriangle,
   Loader2,
   RefreshCw,
+  Shield,
+  Anchor,
 } from "lucide-react";
 import {
   cn,
-  getMissionStatusColor,
-  CONFIDENCE_COLORS,
   formatRelativeTime,
 } from "@/lib/utils";
 
@@ -68,6 +62,16 @@ interface ChatMessage {
   timestamp: string;
 }
 
+function ConfidenceBadge({ confidence }: { confidence: string }) {
+  const map: Record<string, "success" | "warning" | "danger" | "info"> = {
+    HIGH: "success",
+    MEDIUM: "warning",
+    LOW: "danger",
+    UNVERIFIED: "info",
+  };
+  return <Badge variant={map[confidence] || "default"}>{confidence}</Badge>;
+}
+
 export default function CommandCenterPage() {
   const params = useParams();
   const router = useRouter();
@@ -105,10 +109,7 @@ export default function CommandCenterPage() {
 
   useEffect(() => {
     fetchMission();
-
-    // Poll every 3 seconds for live updates
     pollRef.current = setInterval(fetchMission, 3000);
-
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -199,10 +200,10 @@ export default function CommandCenterPage() {
 
   if (loading) {
     return (
-      <div className="bg-slate-900 min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 text-blue-500 animate-spin mx-auto mb-4" />
-          <p className="text-slate-400">Loading Command Center...</p>
+          <Loader2 className="h-8 w-8 text-gold animate-spin mx-auto mb-4" />
+          <p className="text-muted font-mono text-sm">Loading Command Center...</p>
         </div>
       </div>
     );
@@ -210,10 +211,10 @@ export default function CommandCenterPage() {
 
   if (error || !mission) {
     return (
-      <div className="bg-slate-900 min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-4" />
-          <p className="text-slate-400 mb-4">{error || "Mission not found"}</p>
+          <AlertTriangle className="h-8 w-8 text-g-red mx-auto mb-4" />
+          <p className="text-muted mb-4">{error || "Mission not found"}</p>
           <Link href="/missions">
             <Button variant="outline">Back to Missions</Button>
           </Link>
@@ -226,50 +227,53 @@ export default function CommandCenterPage() {
   const canStart = ["DRAFT", "PAUSED"].includes(mission.status);
 
   return (
-    <div className="bg-slate-900 min-h-screen text-white">
+    <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <div className="border-b border-slate-700 bg-slate-900/95 backdrop-blur-sm sticky top-0 z-10">
+      <div className="border-b border-border bg-navy-2 sticky top-0 z-10">
         <div className="mx-auto max-w-full px-4 py-3 sm:px-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4 min-w-0">
               <Link
                 href={`/missions/${mission.id}`}
-                className="text-slate-400 hover:text-white"
+                className="text-muted hover:text-gold transition-colors"
               >
                 <ArrowLeft className="h-5 w-5" />
               </Link>
               <div className="min-w-0">
-                <h1 className="text-lg font-bold truncate">{mission.title}</h1>
+                <h1 className="font-serif text-base font-bold text-cream truncate">
+                  {mission.title}
+                </h1>
                 <div className="flex items-center gap-2">
-                  <Badge className={getMissionStatusColor(mission.status)}>
+                  <Badge
+                    variant={
+                      mission.status === "RUNNING" ? "info" :
+                      mission.status === "COMPLETED" ? "success" :
+                      mission.status === "FAILED" ? "danger" : "default"
+                    }
+                  >
                     {mission.status}
                   </Badge>
                   {mission.confidenceScore !== null && (
-                    <span className="text-xs text-slate-400">
+                    <span className="font-mono text-[11px] text-gold">
                       {Math.round(mission.confidenceScore * 100)}% confidence
                     </span>
                   )}
-                  <span className="text-xs text-slate-500">
+                  <span className="text-[11px] text-muted">
                     {mission.findings.length} findings
                   </span>
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={fetchMission}
-                className="border-slate-600 text-slate-300 hover:bg-slate-800"
-              >
-                <RefreshCw className="h-4 w-4" />
+              <Button variant="outline" size="icon-sm" onClick={fetchMission}>
+                <RefreshCw className="h-3.5 w-3.5" />
               </Button>
               {canStart && (
                 <Button
                   size="sm"
                   onClick={handleStartMission}
                   disabled={actionLoading}
-                  className="bg-emerald-600 hover:bg-emerald-700"
+                  className="bg-g-green/20 text-g-green border border-g-green/30 hover:bg-g-green/30"
                 >
                   {actionLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -284,7 +288,7 @@ export default function CommandCenterPage() {
                   size="sm"
                   onClick={handleStopMission}
                   disabled={actionLoading}
-                  className="bg-red-600 hover:bg-red-700"
+                  variant="destructive"
                 >
                   {actionLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -300,147 +304,114 @@ export default function CommandCenterPage() {
       </div>
 
       {/* Main Layout */}
-      <div className="flex h-[calc(100vh-65px)]">
-        {/* Left Panel - Agent Activity + Findings */}
+      <div className="flex flex-1 h-[calc(100vh-65px)]">
+        {/* Left Panel */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
           {/* Agent Activity */}
-          <Card className="bg-slate-800 border-slate-700">
-            <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
-                <Zap className="h-5 w-5 text-blue-400" />
-                Agent Activity
-                {isRunning && (
-                  <span className="flex h-2 w-2">
-                    <span className="animate-ping absolute h-2 w-2 rounded-full bg-blue-400 opacity-75" />
-                    <span className="relative rounded-full h-2 w-2 bg-blue-500" />
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+          <div className="rounded-lg border border-border bg-navy-2 overflow-hidden">
+            <div className="flex items-center gap-2 border-b border-border px-5 py-3">
+              <Zap className="h-3.5 w-3.5 text-gold/60" />
+              <h2 className="section-title">Agent Activity</h2>
+              {isRunning && (
+                <span className="flex h-2 w-2 ml-1">
+                  <span className="animate-ping absolute h-2 w-2 rounded-full bg-g-blue opacity-75" />
+                  <span className="relative rounded-full h-2 w-2 bg-g-blue" />
+                </span>
+              )}
+            </div>
+            <div className="p-4">
               {mission.agentTasks.length === 0 ? (
-                <p className="text-sm text-slate-400 text-center py-6">
+                <p className="text-sm text-muted text-center py-6">
                   {isRunning
                     ? "Waiting for agent tasks..."
                     : "No agent activity yet. Start the mission to begin."}
                 </p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {mission.agentTasks.map((task) => (
-                    <div
-                      key={task.id}
-                      className="rounded-lg bg-slate-700/50 p-3"
-                    >
+                    <div key={task.id} className="rounded-lg border border-border/50 bg-navy-3/30 p-3">
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
                           <div
                             className={cn(
                               "h-2 w-2 rounded-full",
-                              task.status === "COMPLETED" && "bg-emerald-500",
-                              task.status === "RUNNING" &&
-                                "bg-blue-500 animate-pulse",
-                              task.status === "FAILED" && "bg-red-500",
-                              task.status === "PENDING" && "bg-slate-500"
+                              task.status === "COMPLETED" && "bg-g-green",
+                              task.status === "RUNNING" && "bg-g-blue animate-pulse",
+                              task.status === "FAILED" && "bg-g-red",
+                              task.status === "PENDING" && "bg-muted-2"
                             )}
                           />
-                          <Badge
-                            variant="secondary"
-                            className="text-xs bg-slate-600 text-slate-200"
-                          >
+                          <Badge variant="secondary" className="text-[10px]">
                             {task.agentType}
                           </Badge>
-                          <span className="text-xs text-slate-400">
-                            {task.taskType}
-                          </span>
+                          <span className="text-[11px] text-muted">{task.taskType}</span>
                         </div>
-                        <span className="text-xs text-slate-500">
-                          {task.startedAt
-                            ? formatRelativeTime(task.startedAt)
-                            : "Queued"}
+                        <span className="text-[11px] text-muted-2">
+                          {task.startedAt ? formatRelativeTime(task.startedAt) : "Queued"}
                         </span>
                       </div>
                       {task.description && (
-                        <p className="text-sm text-slate-300 mt-1">
-                          {task.description}
-                        </p>
+                        <p className="text-xs text-cream-2 mt-1">{task.description}</p>
                       )}
                       {task.output && (
-                        <p className="text-xs text-slate-400 mt-1 line-clamp-3">
-                          {task.output}
-                        </p>
+                        <p className="text-[11px] text-muted mt-1 line-clamp-3">{task.output}</p>
                       )}
                     </div>
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
           {/* Findings */}
-          <Card className="bg-slate-800 border-slate-700">
-            <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-400" />
-                Findings ({mission.findings.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+          <div className="rounded-lg border border-border bg-navy-2 overflow-hidden">
+            <div className="flex items-center gap-2 border-b border-border px-5 py-3">
+              <Shield className="h-3.5 w-3.5 text-gold/60" />
+              <h2 className="section-title">Findings ({mission.findings.length})</h2>
+            </div>
+            <div className="p-4">
               {mission.findings.length === 0 ? (
-                <p className="text-sm text-slate-400 text-center py-6">
+                <p className="text-sm text-muted text-center py-6">
                   Findings will appear here as agents discover insights.
                 </p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {mission.findings.map((finding) => (
-                    <div
-                      key={finding.id}
-                      className="rounded-lg bg-slate-700/50 p-3"
-                    >
+                    <div key={finding.id} className="rounded-lg border border-border/50 bg-navy-3/30 p-3">
                       <div className="flex items-start justify-between gap-2 mb-1">
-                        <h4 className="text-sm font-medium text-white">
-                          {finding.title}
-                        </h4>
-                        <Badge
-                          className={
-                            CONFIDENCE_COLORS[finding.confidence] ||
-                            "bg-slate-600 text-slate-200"
-                          }
-                        >
-                          {finding.confidence}
-                        </Badge>
+                        <h4 className="font-mono text-xs font-medium text-cream-2">{finding.title}</h4>
+                        <ConfidenceBadge confidence={finding.confidence} />
                       </div>
-                      <p className="text-sm text-slate-300">{finding.content}</p>
-                      <div className="flex items-center gap-3 text-xs text-slate-500 mt-2">
+                      <p className="text-xs text-muted">{finding.content}</p>
+                      <div className="flex items-center gap-3 text-[11px] text-muted-2 mt-2">
                         <span>{finding.category}</span>
-                        {finding.sourceUrl && (
-                          <span>{finding.sourceUrl}</span>
-                        )}
+                        {finding.sourceUrl && <span>{finding.sourceUrl}</span>}
                       </div>
                     </div>
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
 
         {/* Right Panel - Chat */}
-        <div className="w-96 border-l border-slate-700 flex flex-col bg-slate-850 hidden lg:flex">
-          <div className="p-4 border-b border-slate-700">
-            <h2 className="font-semibold text-slate-200">Mission Chat</h2>
-            <p className="text-xs text-slate-400">
-              Guide agents and ask questions
-            </p>
+        <div className="w-96 border-l border-border flex flex-col bg-navy-2 hidden lg:flex">
+          <div className="p-4 border-b border-border">
+            <div className="flex items-center gap-2">
+              <Anchor className="h-3.5 w-3.5 text-gold/60" />
+              <h2 className="section-title">Mission Chat</h2>
+            </div>
+            <p className="text-[11px] text-muted mt-1">Guide agents and ask questions</p>
           </div>
 
           {/* Chat Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {chatMessages.length === 0 && (
-              <div className="text-center text-slate-500 text-sm py-8">
+              <div className="text-center text-muted text-xs py-8">
                 <p>Send a message to interact with the agents.</p>
-                <p className="mt-1 text-xs">
-                  You can ask questions, provide guidance, or request specific
-                  research.
+                <p className="mt-1 text-muted-2">
+                  You can ask questions, provide guidance, or request specific research.
                 </p>
               </div>
             )}
@@ -448,47 +419,43 @@ export default function CommandCenterPage() {
               <div
                 key={msg.id}
                 className={cn(
-                  "rounded-lg p-3 text-sm max-w-[85%]",
+                  "rounded-lg p-3 text-xs max-w-[85%]",
                   msg.role === "user"
-                    ? "bg-blue-600 text-white ml-auto"
-                    : "bg-slate-700 text-slate-200"
+                    ? "bg-gold/10 border border-gold/20 text-cream-2 ml-auto"
+                    : "bg-navy-3 border border-border text-cream-2"
                 )}
               >
                 <p>{msg.content}</p>
-                <p className="text-xs opacity-60 mt-1">
+                <p className="text-[10px] text-muted-2 mt-1">
                   {formatRelativeTime(msg.timestamp)}
                 </p>
               </div>
             ))}
             {sendingChat && (
-              <div className="bg-slate-700 rounded-lg p-3 text-sm max-w-[85%]">
-                <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+              <div className="bg-navy-3 border border-border rounded-lg p-3 max-w-[85%]">
+                <Loader2 className="h-4 w-4 animate-spin text-gold" />
               </div>
             )}
             <div ref={chatEndRef} />
           </div>
 
           {/* Chat Input */}
-          <form
-            onSubmit={handleSendChat}
-            className="p-4 border-t border-slate-700"
-          >
+          <form onSubmit={handleSendChat} className="p-4 border-t border-border">
             <div className="flex gap-2">
               <input
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 placeholder="Type a message..."
-                className="flex-1 rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="flex-1 rounded-lg bg-navy-3 border border-border px-3 py-2 text-xs text-cream-2 font-mono placeholder-muted-2 focus:outline-none focus:ring-1 focus:ring-gold/30 focus:border-gold/50"
                 disabled={sendingChat}
               />
               <Button
                 type="submit"
-                size="sm"
+                size="icon-sm"
                 disabled={sendingChat || !chatInput.trim()}
-                className="bg-blue-600 hover:bg-blue-700"
               >
-                <Send className="h-4 w-4" />
+                <Send className="h-3.5 w-3.5" />
               </Button>
             </div>
           </form>

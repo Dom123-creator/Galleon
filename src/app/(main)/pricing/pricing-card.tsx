@@ -53,7 +53,6 @@ export function PricingCard({
         throw new Error(data.error || "Failed to create checkout session");
       }
 
-      // Redirect to Stripe Checkout
       window.location.href = data.url;
     } catch (error) {
       addToast({
@@ -70,11 +69,11 @@ export function PricingCard({
   return (
     <div
       className={cn(
-        "relative rounded-2xl border bg-white p-8",
+        "relative rounded-lg border bg-navy-2 p-7",
         isPopular
-          ? "border-blue-500 shadow-xl shadow-blue-500/10"
-          : "border-slate-200",
-        isCurrentPlan && "ring-2 ring-emerald-500"
+          ? "border-gold/40 gold-accent"
+          : "border-border",
+        isCurrentPlan && "ring-2 ring-g-green/50"
       )}
     >
       {isPopular && (
@@ -96,20 +95,20 @@ export function PricingCard({
       )}
 
       <div className="text-center">
-        <h3 className="text-lg font-semibold text-slate-900">{name}</h3>
-        <p className="mt-1 text-sm text-slate-500">{description}</p>
+        <h3 className="font-serif text-lg font-semibold text-cream">{name}</h3>
+        <p className="mt-1 text-xs text-muted">{description}</p>
 
         <div className="mt-6">
-          <span className="text-4xl font-bold text-slate-900">
+          <span className="font-mono text-4xl font-bold text-cream">
             ${price}
           </span>
           {price > 0 && (
-            <span className="text-slate-500">/{interval}</span>
+            <span className="text-muted font-mono text-sm">/{interval}</span>
           )}
         </div>
 
         {tier !== "ANALYST" && (
-          <p className="mt-2 text-sm text-emerald-600">
+          <p className="mt-2 text-xs text-g-green font-mono">
             7-day free trial included
           </p>
         )}
@@ -118,8 +117,8 @@ export function PricingCard({
       <ul className="mt-8 space-y-3">
         {features.map((feature) => (
           <li key={feature} className="flex items-start gap-3">
-            <Check className="h-5 w-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-            <span className="text-sm text-slate-600">{feature}</span>
+            <Check className="h-4 w-4 text-g-green flex-shrink-0 mt-0.5" />
+            <span className="text-xs text-cream-2">{feature}</span>
           </li>
         ))}
       </ul>

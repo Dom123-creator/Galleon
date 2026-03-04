@@ -6,19 +6,13 @@ import { usePathname } from "next/navigation";
 import { SignedIn, SignedOut, UserButton } from "@/components/providers/clerk-components";
 import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-
-const navigation = [
-  { name: "Pricing", href: "/pricing" },
-  { name: "About", href: "/about" },
-];
 
 const userNavigation = [
   { name: "Dashboard", href: "/dashboard" },
   { name: "Deals", href: "/deals" },
   { name: "Missions", href: "/missions" },
   { name: "Documents", href: "/documents" },
-  { name: "Account", href: "/account" },
+  { name: "Command Center", href: "/command-center" },
 ];
 
 export function Header() {
@@ -26,73 +20,61 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-      <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8" aria-label="Main">
-        <div className="flex h-16 items-center justify-between">
+    <header className="sticky top-0 z-40 w-full border-b border-border bg-navy-2">
+      <nav className="mx-auto max-w-[1400px] px-6 lg:px-9" aria-label="Main">
+        <div className="flex h-[58px] items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center">
-                <span className="text-white font-bold text-lg">G</span>
-              </div>
-              <span className="font-bold text-xl text-slate-900">Galleon</span>
-            </Link>
-          </div>
+          <Link href="/dashboard" className="flex items-center gap-2.5">
+            <svg width="24" height="24" viewBox="0 0 28 28" fill="none">
+              <path d="M4 20 Q14 8 24 20" stroke="#c9a84c" strokeWidth="1.8" fill="none"/>
+              <path d="M14 6 L14 20" stroke="#c9a84c" strokeWidth="1.5"/>
+              <path d="M14 8 L20 14 L14 14 Z" fill="#c9a84c" opacity="0.7"/>
+              <path d="M4 20 Q14 24 24 20 L24 22 Q14 27 4 22 Z" fill="#c9a84c" opacity="0.4"/>
+            </svg>
+            <span className="font-serif text-xl font-bold text-gold tracking-wide">GALLEON</span>
+          </Link>
 
           {/* Desktop navigation */}
-          <div className="hidden md:flex md:items-center md:gap-x-8">
-            {navigation.map((item) => (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={cn(
-                  "text-sm font-medium transition-colors",
-                  pathname === item.href || pathname.startsWith(item.href + "/")
-                    ? "text-blue-600"
-                    : "text-slate-600 hover:text-slate-900"
-                )}
-              >
-                {item.name}
-              </Link>
-            ))}
-
+          <div className="hidden md:flex md:items-center md:gap-1 flex-1 ml-8">
             <SignedIn>
               {userNavigation.map((item) => (
                 <Link
                   key={item.name}
                   href={item.href}
                   className={cn(
-                    "text-sm font-medium transition-colors",
+                    "px-3.5 py-1.5 rounded text-[11px] font-semibold tracking-wide font-mono transition-all duration-150",
                     pathname === item.href || pathname.startsWith(item.href + "/")
-                      ? "text-blue-600"
-                      : "text-slate-600 hover:text-slate-900"
+                      ? "bg-navy-3 text-gold-2 border border-border-2"
+                      : "text-muted-2 border border-transparent hover:text-cream-2 hover:bg-navy-3/50"
                   )}
                 >
                   {item.name}
                 </Link>
               ))}
             </SignedIn>
+
+            <SignedOut>
+              <Link href="/pricing" className="px-3.5 py-1.5 rounded text-[11px] font-semibold tracking-wide font-mono text-muted-2 hover:text-cream-2 transition-colors">
+                Pricing
+              </Link>
+            </SignedOut>
           </div>
 
           {/* Desktop auth */}
-          <div className="hidden md:flex md:items-center md:gap-x-4">
+          <div className="hidden md:flex md:items-center md:gap-3">
             <SignedOut>
-              <Link href="/sign-in">
-                <Button variant="ghost">Sign in</Button>
+              <Link href="/sign-in" className="px-3.5 py-1.5 rounded text-[11px] font-semibold tracking-wide font-mono text-muted-2 hover:text-cream-2 transition-colors">
+                Sign in
               </Link>
-              <Link href="/sign-up">
-                <Button variant="primary">Get Started</Button>
+              <Link href="/sign-up" className="px-4 py-1.5 rounded bg-gold text-navy text-[11px] font-bold tracking-wide font-mono hover:bg-gold-2 transition-colors">
+                Get Started
               </Link>
             </SignedOut>
 
             <SignedIn>
               <UserButton
                 afterSignOutUrl="/"
-                appearance={{
-                  elements: {
-                    avatarBox: "w-9 h-9",
-                  },
-                }}
+                appearance={{ elements: { avatarBox: "w-8 h-8" } }}
               />
             </SignedIn>
           </div>
@@ -101,76 +83,39 @@ export function Header() {
           <div className="md:hidden">
             <button
               type="button"
-              className="p-2 text-slate-600 hover:text-slate-900"
+              className="p-2 text-muted hover:text-cream-2"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               aria-label="Toggle menu"
             >
-              {mobileMenuOpen ? (
-                <X className="h-6 w-6" />
-              ) : (
-                <Menu className="h-6 w-6" />
-              )}
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
           </div>
         </div>
 
         {/* Mobile menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden py-4 border-t border-slate-200">
+          <div className="md:hidden py-3 border-t border-border">
             <div className="space-y-1">
-              {navigation.map((item) => (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={cn(
-                    "block px-3 py-2 rounded-lg text-base font-medium",
-                    pathname === item.href || pathname.startsWith(item.href + "/")
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-slate-600 hover:bg-slate-50"
-                  )}
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  {item.name}
-                </Link>
-              ))}
-
               <SignedIn>
-                <div className="border-t border-slate-200 my-2 pt-2">
-                  {userNavigation.map((item) => (
-                    <Link
-                      key={item.name}
-                      href={item.href}
-                      className={cn(
-                        "block px-3 py-2 rounded-lg text-base font-medium",
-                        pathname === item.href || pathname.startsWith(item.href + "/")
-                          ? "bg-blue-50 text-blue-600"
-                          : "text-slate-600 hover:bg-slate-50"
-                      )}
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      {item.name}
-                    </Link>
-                  ))}
-                </div>
+                {userNavigation.map((item) => (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={cn(
+                      "block px-3 py-2 rounded text-sm font-mono",
+                      pathname === item.href || pathname.startsWith(item.href + "/")
+                        ? "bg-navy-3 text-gold"
+                        : "text-muted-2 hover:bg-navy-3 hover:text-cream-2"
+                    )}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {item.name}
+                  </Link>
+                ))}
               </SignedIn>
-
               <SignedOut>
-                <div className="border-t border-slate-200 my-2 pt-2 space-y-2">
-                  <Link
-                    href="/sign-in"
-                    className="block px-3 py-2 rounded-lg text-base font-medium text-slate-600 hover:bg-slate-50"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    Sign in
-                  </Link>
-                  <Link
-                    href="/sign-up"
-                    className="block px-3 py-2 rounded-lg text-base font-medium bg-blue-600 text-white text-center"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    Get Started
-                  </Link>
-                </div>
+                <Link href="/sign-in" className="block px-3 py-2 rounded text-sm font-mono text-muted-2 hover:bg-navy-3" onClick={() => setMobileMenuOpen(false)}>Sign in</Link>
+                <Link href="/sign-up" className="block px-3 py-2 rounded text-sm font-mono bg-gold/20 text-gold" onClick={() => setMobileMenuOpen(false)}>Get Started</Link>
               </SignedOut>
             </div>
           </div>
