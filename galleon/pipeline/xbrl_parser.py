@@ -43,11 +43,13 @@ def _cik_for_path(cik: str) -> str:
 
 # ── EDGAR Discovery ──────────────────────────────────────────────────────────
 
-def find_latest_10k(cik: str) -> Optional[Dict]:
+def find_filings(cik: str, form_types: Optional[List[str]] = None, max_filings: int = 8) -> List[Dict]:
     """
-    Fetch /submissions/CIK{cik}.json, find most recent 10-K filing.
-    Returns {accession_number, accession_fmt, filing_date, primary_document} or None.
+    Fetch /submissions/CIK{cik}.json, return up to max_filings matching form_types.
+    Each entry: {accession_number, accession_fmt, filing_date, primary_document, form}.
     """
+    if form_types is None:
+        form_types = ["10-K", "10-K/A"]
     try:
         time.sleep(RATE_LIMIT_SLEEP)
         url = f"{EDGAR_BASE}/submissions/CIK{cik}.json"
@@ -61,18 +63,32 @@ def find_latest_10k(cik: str) -> Optional[Dict]:
         accessions = recent.get("accessionNumber", [])
         primary_docs = recent.get("primaryDocument", [])
 
+        results = []
         for form, date, acc, doc in zip(forms, dates, accessions, primary_docs):
-            if form in ("10-K", "10-K/A"):
-                return {
+            if form in form_types:
+                results.append({
                     "accession_number": acc.replace("-", ""),
                     "accession_fmt": acc,
                     "filing_date": date,
                     "primary_document": doc,
-                }
-        return None
+                    "form": form,
+                })
+                if len(results) >= max_filings:
+                    break
+        return results
     except Exception as exc:
-        print(f"[xbrl_parser] find_latest_10k({cik}) failed: {exc}")
-        return None
+        print(f"[xbrl_parser] find_filings({cik}) failed: {exc}")
+        return []
+
+
+def find_latest_10k(cik: str) -> Optional[Dict]:
+    """
+    Fetch /submissions/CIK{cik}.json, find most recent 10-K filing.
+    Returns {accession_number, accession_fmt, filing_date, primary_document} or None.
+    Thin wrapper around find_filings() for backward compatibility.
+    """
+    results = find_filings(cik, form_types=["10-K", "10-K/A"], max_filings=1)
+    return results[0] if results else None
 
 
 def _fetch_filing_html(cik: str, accession: str, document: str) -> Optional[str]:

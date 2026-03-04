@@ -33,18 +33,30 @@ from .models import (
     CompanyOut,
     CompanySearchResult,
     CompanySummary,
+    ConcentrationLimit,
     ConflictCandidateOut,
     ConflictDetailOut,
     ConflictOut,
     ConflictResolveRequest,
+    CrossRefCompany,
+    CrossRefHolder,
+    CrossRefStats,
+    CompanyTimeline,
+    DealReview,
+    DealReviewCreate,
+    DealReviewUpdate,
+    EarlyWarning,
+    ExposureReport,
     FieldLineageOut,
     DocumentOut,
     FdicFailureOut,
     FdicFinancialsOut,
     FdicInstitutionOut,
     FieldValueOut,
+    FilingAlert,
     GroundTruthOut,
     HealthOut,
+    MonitorStatus,
     MultiSourceSearchOut,
     OpenCorpCompanyOut,
     OpenCorpOfficerOut,
@@ -53,6 +65,8 @@ from .models import (
     RecipientProfileOut,
     RuleOut,
     SbaLoanOut,
+    TemporalSnapshot,
+    TemporalStats,
     UccFilingOut,
     UsaSpendingAwardOut,
 )
@@ -127,6 +141,13 @@ def startup_event():
             t.start()
     except Exception as exc:
         print(f"[galleon] BDC index startup check failed: {exc}")
+
+    # Start EDGAR filing monitor
+    try:
+        from pipeline.edgar_monitor import start_monitor  # type: ignore
+        start_monitor()
+    except Exception as exc:
+        print(f"[galleon] EDGAR monitor startup failed: {exc}")
 
 
 # ── BDC Index Seed Helpers (used when DB is unavailable) ─────────────────────
@@ -1598,6 +1619,294 @@ def _static_rules() -> List[RuleOut]:
         RuleOut(rule_id="R008", name="Spread bps Norm",     field="pricing_spread",   type="unit",    logic="convert % -> bps",            base_confidence=1.000),
         RuleOut(rule_id="R009", name="FV / Cost Ratio",     field="fair_value_usd",   type="logical", logic="0.50 <= fv/cost <= 1.10",     base_confidence=0.900),
     ]
+
+
+# ── Cross-Reference Graph ────────────────────────────────────────────────────
+
+@app.get("/bdc/cross-references", response_model=List[CrossRefCompany], tags=["bdc"])
+def get_cross_references(min_holders: int = 2, limit: int = 50):
+    """Return companies held by multiple BDCs, sorted by FV discrepancy."""
+    try:
+        from bdc_index import build_cross_references  # type: ignore
+        xrefs = build_cross_references(min_holders=min_holders)
+        return [
+            CrossRefCompany(
+                canonical_name=x["canonical_name"],
+                holder_count=x["holder_count"],
+                holders=[CrossRefHolder(**h) for h in x["holders"]],
+                fv_range_pct=x["fv_range_pct"],
+                total_exposure_usd=x["total_exposure_usd"],
+                sectors=x["sectors"],
+            )
+            for x in xrefs[:limit]
+        ]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/bdc/cross-reference-stats", response_model=CrossRefStats, tags=["bdc"])
+def get_cross_ref_stats():
+    """Summary stats for cross-BDC holdings."""
+    try:
+        from bdc_index import get_cross_reference_stats  # type: ignore
+        stats = get_cross_reference_stats()
+        return CrossRefStats(**stats)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── Temporal Analysis ────────────────────────────────────────────────────────
+
+@app.post("/temporal/build", tags=["temporal"])
+def build_temporal(background_tasks: BackgroundTasks, bdc_ticker: str = "ARCC", max_quarters: int = 8):
+    """Build temporal index for a BDC (background task)."""
+    from bdc_index import BDC_SEED  # type: ignore
+    cik = BDC_SEED.get(bdc_ticker)
+    if not cik:
+        raise HTTPException(status_code=404, detail=f"Unknown BDC ticker: {bdc_ticker}")
+
+    def _build():
+        try:
+            from pipeline.temporal import build_temporal_index  # type: ignore
+            count = build_temporal_index(cik, bdc_ticker, max_quarters=max_quarters)
+            print(f"[temporal] Built {count} snapshots for {bdc_ticker}")
+        except Exception as exc:
+            print(f"[temporal] Build failed: {exc}")
+
+    background_tasks.add_task(_build)
+    return {"status": "building", "bdc_ticker": bdc_ticker}
+
+
+@app.get("/temporal/timeline/{company_name}", response_model=CompanyTimeline, tags=["temporal"])
+def get_timeline(company_name: str, bdc: Optional[str] = None):
+    """Get time-series snapshots for a company."""
+    try:
+        from pipeline.temporal import get_company_timeline  # type: ignore
+        result = get_company_timeline(company_name, bdc=bdc)
+        return CompanyTimeline(
+            company_name=result["company_name"],
+            snapshots=[TemporalSnapshot(**s) for s in result["snapshots"]],
+            fv_trend=result["fv_trend"],
+            quarters_declining=result["quarters_declining"],
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/temporal/warnings", response_model=List[EarlyWarning], tags=["temporal"])
+def get_warnings(min_quarters: int = 2):
+    """Get early warning signals for declining companies."""
+    try:
+        from pipeline.temporal import detect_early_warnings  # type: ignore
+        warnings = detect_early_warnings(threshold_quarters=min_quarters)
+        return [EarlyWarning(**w) for w in warnings]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/temporal/stats", response_model=TemporalStats, tags=["temporal"])
+def get_temporal_stats_route():
+    """Get temporal analysis summary stats."""
+    try:
+        from pipeline.temporal import get_temporal_stats  # type: ignore
+        return TemporalStats(**get_temporal_stats())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── EDGAR Monitor ────────────────────────────────────────────────────────────
+
+@app.get("/monitor/status", response_model=MonitorStatus, tags=["monitor"])
+def monitor_status():
+    """Get EDGAR monitor status."""
+    try:
+        from pipeline.edgar_monitor import get_monitor_status  # type: ignore
+        return MonitorStatus(**get_monitor_status())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/monitor/alerts", response_model=List[FilingAlert], tags=["monitor"])
+def monitor_alerts(unread_only: bool = False, limit: int = 50):
+    """Get filing alerts from EDGAR monitor."""
+    try:
+        from pipeline.edgar_monitor import get_alerts  # type: ignore
+        alerts = get_alerts(unread_only=unread_only, limit=limit)
+        return [FilingAlert(**a) for a in alerts]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/monitor/alerts/{alert_id}/read", tags=["monitor"])
+def mark_alert_read_route(alert_id: str):
+    """Mark a single alert as read."""
+    try:
+        from pipeline.edgar_monitor import mark_alert_read  # type: ignore
+        success = mark_alert_read(alert_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/monitor/alerts/read-all", tags=["monitor"])
+def mark_all_alerts_read():
+    """Mark all alerts as read."""
+    try:
+        from pipeline.edgar_monitor import mark_all_read  # type: ignore
+        count = mark_all_read()
+        return {"status": "ok", "marked": count}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── Workflow Layer ───────────────────────────────────────────────────────────
+
+_deal_reviews: Dict[str, Dict] = {}
+_concentration_limits = {
+    "sector_max_pct": 25.0,
+    "single_name_max_pct": 5.0,
+    "non_accrual_max_pct": 10.0,
+}
+
+
+@app.get("/workflow/reviews", response_model=List[DealReview], tags=["workflow"])
+def list_deal_reviews():
+    """List all deal reviews."""
+    if not _deal_reviews:
+        _seed_deal_reviews()
+    return [DealReview(**r) for r in sorted(_deal_reviews.values(), key=lambda r: r["created_at"], reverse=True)]
+
+
+@app.post("/workflow/reviews", response_model=DealReview, status_code=201, tags=["workflow"])
+def create_deal_review(body: DealReviewCreate):
+    """Create a new deal review."""
+    now = datetime.utcnow().isoformat() + "Z"
+    review = {
+        "id": str(uuid.uuid4()),
+        "company_name": body.company_name,
+        "company_id": body.company_id,
+        "status": "pending",
+        "assignee": body.assignee,
+        "notes": body.notes,
+        "priority": body.priority,
+        "created_at": now,
+        "updated_at": now,
+    }
+    _deal_reviews[review["id"]] = review
+    return DealReview(**review)
+
+
+@app.patch("/workflow/reviews/{review_id}", response_model=DealReview, tags=["workflow"])
+def update_deal_review(review_id: str, body: DealReviewUpdate):
+    """Update a deal review (status, assignee, notes, priority)."""
+    review = _deal_reviews.get(review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    if body.status is not None:
+        review["status"] = body.status
+    if body.assignee is not None:
+        review["assignee"] = body.assignee
+    if body.notes is not None:
+        review["notes"] = body.notes
+    if body.priority is not None:
+        review["priority"] = body.priority
+    review["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    return DealReview(**review)
+
+
+@app.get("/workflow/exposure", response_model=ExposureReport, tags=["workflow"])
+def get_exposure():
+    """Aggregate portfolio exposure by sector, BDC, and facility type."""
+    flat = _get_bdc_flat_index()
+    if not flat:
+        return ExposureReport()
+
+    by_sector: Dict[str, float] = {}
+    by_bdc: Dict[str, float] = {}
+    by_facility: Dict[str, float] = {}
+    total_fv = 0.0
+    na_exposure = 0.0
+
+    for co in flat:
+        fv = co.get("fair_value_usd") or 0
+        total_fv += fv
+        sector = co.get("sector") or "Unknown"
+        bdc = co.get("source_bdc") or "Unknown"
+        facility = co.get("facility_type") or "Unknown"
+        by_sector[sector] = by_sector.get(sector, 0) + fv
+        by_bdc[bdc] = by_bdc.get(bdc, 0) + fv
+        by_facility[facility] = by_facility.get(facility, 0) + fv
+        if co.get("non_accrual"):
+            na_exposure += fv
+
+    # Check concentration limits
+    alerts = []
+    if total_fv > 0:
+        for sector, val in by_sector.items():
+            pct = val / total_fv * 100
+            limit = _concentration_limits["sector_max_pct"]
+            if pct > limit:
+                alerts.append(ConcentrationLimit(
+                    dimension="sector", name=sector,
+                    current_exposure_usd=val, limit_pct=limit,
+                    current_pct=round(pct, 1), breached=True,
+                ))
+        na_pct = na_exposure / total_fv * 100
+        na_limit = _concentration_limits["non_accrual_max_pct"]
+        alerts.append(ConcentrationLimit(
+            dimension="non_accrual", name="Non-Accrual Total",
+            current_exposure_usd=na_exposure, limit_pct=na_limit,
+            current_pct=round(na_pct, 1), breached=na_pct > na_limit,
+        ))
+
+    return ExposureReport(
+        total_portfolio_usd=round(total_fv, 2),
+        by_sector=by_sector,
+        by_bdc=by_bdc,
+        by_facility_type=by_facility,
+        non_accrual_exposure_usd=round(na_exposure, 2),
+        concentration_alerts=alerts,
+    )
+
+
+@app.get("/workflow/concentration", response_model=List[ConcentrationLimit], tags=["workflow"])
+def get_concentration():
+    """Check portfolio concentration against limits."""
+    exposure = get_exposure()
+    return exposure.concentration_alerts
+
+
+def _seed_deal_reviews() -> None:
+    """Seed some initial deal reviews from BDC index for demo."""
+    flat = _get_bdc_flat_index()
+    if not flat:
+        return
+    import hashlib
+    statuses = ["pending", "under_review", "approved", "pending", "under_review"]
+    assignees = ["Sarah Chen", "Mike Rodriguez", "Jennifer Park", None, "David Kim"]
+    priorities = ["high", "medium", "low", "high", "medium"]
+    top = sorted(flat, key=lambda c: abs(c.get("fair_value_usd") or 0), reverse=True)[:5]
+    for i, co in enumerate(top):
+        name = co.get("company_name", "")
+        if not name:
+            continue
+        rid = hashlib.md5(f"review-{name}".encode()).hexdigest()[:12]
+        cid = hashlib.md5(name.encode()).hexdigest()[:12]
+        _deal_reviews[rid] = {
+            "id": rid,
+            "company_name": name,
+            "company_id": cid,
+            "status": statuses[i % len(statuses)],
+            "assignee": assignees[i % len(assignees)],
+            "notes": f"Review {co.get('source_bdc', '')} position — FV ${(co.get('fair_value_usd') or 0)/1e6:.1f}M",
+            "priority": priorities[i % len(priorities)],
+            "created_at": "2026-03-01T10:00:00Z",
+            "updated_at": "2026-03-03T14:30:00Z",
+        }
 
 
 # ── Serve React frontend (built static files) ───────────────────────────────

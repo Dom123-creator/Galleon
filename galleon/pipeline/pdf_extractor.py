@@ -780,6 +780,28 @@ def run_pipeline(pdf_path: str) -> dict:
     candidates = ext.run()
     unique = len({c.field_name for c in candidates})
     print(f"        {len(candidates)} candidates, {unique} unique fields")
+
+    # Stage 4.5: LLM Extraction (if ANTHROPIC_API_KEY set)
+    try:
+        import os
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            from pipeline.llm_extractor import LlmExtractor  # type: ignore
+            print(f"  [4.5/7] LLM extraction (Claude Haiku)...")
+            llm = LlmExtractor(loader.full_text, pdf_path)
+            llm_results = llm.extract_covenants() + llm.extract_waterfall() + llm.extract_amendments()
+            for r in llm_results:
+                candidates.append(FieldValueCandidate(
+                    field_name=r.field_name, field_category=r.field_category,
+                    raw_value=r.raw_value, normalized_value=r.normalized_value or r.raw_value,
+                    numeric_value=r.numeric_value, source_type="llm_extraction",
+                    source_document=pdf_path, source_page=0,
+                    source_section=r.source_section, source_snippet=r.source_snippet,
+                    extraction_method=r.extraction_method, confidence_score=r.confidence_score,
+                ))
+            print(f"        {len(llm_results)} LLM-extracted fields (covenants/waterfall/amendments)")
+    except Exception as exc:
+        print(f"  [4.5/7] LLM extraction skipped: {exc}")
+
     print(f"  [5/7] Detecting conflicts...")
     conflicts = detect_conflicts(candidates)
     print(f"        {len(conflicts)} conflict(s): {list(conflicts.keys())}")

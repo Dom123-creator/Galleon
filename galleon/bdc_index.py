@@ -503,6 +503,100 @@ class _SimpleEntityResolver:
         return re.sub(r"[^\w\s]", "", n).lower().strip()
 
 
+# ── Cross-Reference Analysis ─────────────────────────────────────────────────
+
+def build_cross_references(min_holders: int = 2) -> List[Dict]:
+    """
+    Group _flat_index by normalized company name, return groups with 2+ BDC holders.
+    Each record: {canonical_name, holders, fv_range_pct, holder_count, total_exposure_usd, sectors}.
+    Sorted by fv_range_pct descending (biggest discrepancies first).
+    """
+    resolver = _get_resolver()
+    by_name: Dict[str, List[Dict]] = {}
+
+    for co in _flat_index:
+        name = co.get("company_name", "")
+        if not name:
+            continue
+        norm = resolver.normalize(name)
+        if not norm:
+            continue
+        by_name.setdefault(norm, []).append(co)
+
+    results = []
+    for norm, companies in by_name.items():
+        # Only include if held by multiple distinct BDCs
+        bdcs = set(c.get("source_bdc", "") for c in companies)
+        if len(bdcs) < min_holders:
+            continue
+
+        holders = []
+        fair_values = []
+        sectors = set()
+        total_exposure = 0.0
+
+        for co in companies:
+            fv = co.get("fair_value_usd") or 0
+            cost = co.get("cost_basis_usd") or 0
+            holders.append({
+                "source_bdc": co.get("source_bdc", ""),
+                "fair_value_usd": fv,
+                "cost_basis_usd": cost,
+                "pricing_spread": co.get("pricing_spread"),
+                "facility_type": co.get("facility_type"),
+                "filing_date": co.get("filing_date"),
+            })
+            if fv:
+                fair_values.append(fv)
+                total_exposure += fv
+            if co.get("sector"):
+                sectors.add(co["sector"])
+
+        # Calculate FV range as percentage
+        fv_range_pct = 0.0
+        if len(fair_values) >= 2:
+            fv_min, fv_max = min(fair_values), max(fair_values)
+            avg_fv = sum(fair_values) / len(fair_values)
+            if avg_fv > 0:
+                fv_range_pct = round((fv_max - fv_min) / avg_fv * 100, 1)
+
+        canonical = companies[0].get("company_name", norm)
+        results.append({
+            "canonical_name": canonical,
+            "holder_count": len(bdcs),
+            "holders": holders,
+            "fv_range_pct": fv_range_pct,
+            "total_exposure_usd": round(total_exposure, 2),
+            "sectors": sorted(sectors),
+        })
+
+    results.sort(key=lambda r: r["fv_range_pct"], reverse=True)
+    return results
+
+
+def get_cross_reference_stats() -> Dict:
+    """Summary: total cross-held companies, avg holders, max discrepancy."""
+    xrefs = build_cross_references(min_holders=2)
+    if not xrefs:
+        return {
+            "cross_held_companies": 0,
+            "avg_holders": 0,
+            "max_discrepancy_pct": 0,
+            "top_discrepancy_company": None,
+            "total_shared_exposure": 0,
+        }
+    avg_h = sum(x["holder_count"] for x in xrefs) / len(xrefs)
+    top = xrefs[0] if xrefs else {}
+    total_exp = sum(x["total_exposure_usd"] for x in xrefs)
+    return {
+        "cross_held_companies": len(xrefs),
+        "avg_holders": round(avg_h, 1),
+        "max_discrepancy_pct": top.get("fv_range_pct", 0),
+        "top_discrepancy_company": top.get("canonical_name"),
+        "total_shared_exposure": round(total_exp, 2),
+    }
+
+
 # ── Staleness check ───────────────────────────────────────────────────────────
 
 def is_stale() -> bool:

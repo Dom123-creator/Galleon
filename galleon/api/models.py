@@ -336,3 +336,162 @@ class AssistantChatOut(BaseModel):
     action: Optional[str] = None
     action_params: Optional[Dict[str, Any]] = {}
     company_matches: Optional[List[CompanySearchResult]] = None
+
+
+# ── Cross-Reference Graph ────────────────────────────────────────────────────
+
+class CrossRefHolder(BaseModel):
+    source_bdc: str
+    fair_value_usd: Optional[float] = None
+    cost_basis_usd: Optional[float] = None
+    pricing_spread: Optional[str] = None
+    facility_type: Optional[str] = None
+    filing_date: Optional[str] = None
+
+
+class CrossRefCompany(BaseModel):
+    canonical_name: str
+    holder_count: int
+    holders: List[CrossRefHolder] = []
+    fv_range_pct: float = 0.0
+    total_exposure_usd: float = 0.0
+    sectors: List[str] = []
+
+
+class CrossRefStats(BaseModel):
+    cross_held_companies: int = 0
+    avg_holders: float = 0
+    max_discrepancy_pct: float = 0
+    top_discrepancy_company: Optional[str] = None
+    total_shared_exposure: float = 0
+
+
+# ── Temporal Analysis ────────────────────────────────────────────────────────
+
+class TemporalSnapshot(BaseModel):
+    period: str
+    source_bdc: str
+    fair_value_usd: Optional[float] = None
+    cost_basis_usd: Optional[float] = None
+    pricing_spread: Optional[str] = None
+    non_accrual: bool = False
+
+
+class CompanyTimeline(BaseModel):
+    company_name: str
+    snapshots: List[TemporalSnapshot] = []
+    fv_trend: str = "unknown"
+    quarters_declining: int = 0
+
+
+class EarlyWarning(BaseModel):
+    company_name: str
+    source_bdc: str
+    quarters_declining: int
+    fv_change_pct: float
+    current_fv: float
+    severity: str
+
+
+class TemporalStats(BaseModel):
+    companies_tracked: int = 0
+    total_snapshots: int = 0
+    bdcs_with_temporal: int = 0
+    warnings_count: int = 0
+    critical_warnings: int = 0
+    build_status: Dict[str, str] = {}
+
+
+# ── LLM Extraction ──────────────────────────────────────────────────────────
+
+class CovenantOut(BaseModel):
+    covenant_type: str
+    threshold: Optional[str] = None
+    test_frequency: Optional[str] = None
+    cure_period: Optional[str] = None
+    source_document: Optional[str] = None
+    confidence_score: float = 0.85
+
+
+class WaterfallTier(BaseModel):
+    priority: int
+    payee: str
+    description: Optional[str] = None
+    cap_or_limit: Optional[str] = None
+
+
+class AmendmentRecord(BaseModel):
+    amendment_number: Optional[str] = None
+    effective_date: Optional[str] = None
+    changes: List[str] = []
+    summary: Optional[str] = None
+
+
+# ── EDGAR Monitor ────────────────────────────────────────────────────────────
+
+class FilingAlert(BaseModel):
+    id: str
+    alert_type: str
+    source_bdc: Optional[str] = None
+    company_name: Optional[str] = None
+    message: str
+    severity: str = "info"
+    details: Dict[str, Any] = {}
+    read: bool = False
+    created_at: str
+
+
+class MonitorStatus(BaseModel):
+    running: bool = False
+    last_poll: Optional[str] = None
+    alerts_count: int = 0
+    unread_count: int = 0
+    tracked_bdcs: int = 25
+    known_filings: int = 0
+
+
+# ── Workflow ─────────────────────────────────────────────────────────────────
+
+class DealReview(BaseModel):
+    id: str
+    company_name: str
+    company_id: Optional[str] = None
+    status: str = "pending"
+    assignee: Optional[str] = None
+    notes: Optional[str] = None
+    priority: str = "medium"
+    created_at: str
+    updated_at: str
+
+
+class DealReviewCreate(BaseModel):
+    company_name: str
+    company_id: Optional[str] = None
+    assignee: Optional[str] = None
+    notes: Optional[str] = None
+    priority: str = "medium"
+
+
+class DealReviewUpdate(BaseModel):
+    status: Optional[str] = None
+    assignee: Optional[str] = None
+    notes: Optional[str] = None
+    priority: Optional[str] = None
+
+
+class ConcentrationLimit(BaseModel):
+    dimension: str
+    name: str
+    current_exposure_usd: float = 0
+    limit_pct: float = 0
+    current_pct: float = 0
+    breached: bool = False
+
+
+class ExposureReport(BaseModel):
+    total_portfolio_usd: float = 0
+    by_sector: Dict[str, float] = {}
+    by_bdc: Dict[str, float] = {}
+    by_facility_type: Dict[str, float] = {}
+    non_accrual_exposure_usd: float = 0
+    concentration_alerts: List[ConcentrationLimit] = []

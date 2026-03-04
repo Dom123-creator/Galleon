@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 
 // ─── API Layer ────────────────────────────────────────────────────────────────
 const API_BASE = window.location.port === "5173" ? "http://localhost:8000" : "";
@@ -617,6 +617,29 @@ export default function App() {
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchSources, setResearchSources] = useState(new Set(["fdic","usaspending","opencorporates","ucc","bdc"]));
 
+  // ── Cross-Reference state ──────────────────────────────────────────────────
+  const [crossRefs, setCrossRefs]         = useState(null);
+  const [crossRefStats, setCrossRefStats] = useState(null);
+  const [crossRefExpanded, setCrossRefExpanded] = useState(null);
+
+  // ── Temporal state ────────────────────────────────────────────────────────
+  const [temporalStats, setTemporalStats]     = useState(null);
+  const [temporalWarnings, setTemporalWarnings] = useState(null);
+  const [temporalBuilding, setTemporalBuilding] = useState(false);
+  const [temporalTimeline, setTemporalTimeline] = useState(null);
+  const [temporalSelectedCo, setTemporalSelectedCo] = useState(null);
+
+  // ── Monitor / Alerts state ────────────────────────────────────────────────
+  const [monitorAlerts, setMonitorAlerts]   = useState(null);
+  const [monitorStatus, setMonitorStatus]   = useState(null);
+  const [alertsOpen, setAlertsOpen]         = useState(false);
+
+  // ── Workflow state ────────────────────────────────────────────────────────
+  const [dealReviews, setDealReviews]       = useState(null);
+  const [exposure, setExposure]             = useState(null);
+  const [workflowVtab, setWorkflowVtab]    = useState("board");
+  const [newReviewName, setNewReviewName]   = useState("");
+
   // ── Error state ──────────────────────────────────────────────────────────────
   const [apiErrors, setApiErrors] = useState({});
 
@@ -674,8 +697,25 @@ export default function App() {
     fetchWithError("/validation/benchmark", setApiBenchmark, "benchmark");
     fetchWithError("/conflicts", setApiConflicts, "conflicts");
     fetchWithError("/bdc/universe", setApiBdcUniverse, "bdc_universe");
+    // New feature data
+    apiFetch("/bdc/cross-references?min_holders=2&limit=50").then(d => { if (d) setCrossRefs(d); });
+    apiFetch("/bdc/cross-reference-stats").then(d => { if (d) setCrossRefStats(d); });
+    apiFetch("/temporal/stats").then(d => { if (d) setTemporalStats(d); });
+    apiFetch("/temporal/warnings?min_quarters=2").then(d => { if (d) setTemporalWarnings(d); });
+    apiFetch("/monitor/alerts?limit=20").then(d => { if (d) setMonitorAlerts(d); });
+    apiFetch("/monitor/status").then(d => { if (d) setMonitorStatus(d); });
+    apiFetch("/workflow/reviews").then(d => { if (d) setDealReviews(d); });
+    apiFetch("/workflow/exposure").then(d => { if (d) setExposure(d); });
   };
   useEffect(() => { refreshAll(); }, []);
+
+  // Poll alerts every 30 seconds
+  useEffect(() => {
+    const t = setInterval(() => {
+      apiFetch("/monitor/alerts?limit=20").then(d => { if (d) setMonitorAlerts(d); });
+    }, 30000);
+    return () => clearInterval(t);
+  }, []);
 
   // ── When GT data arrives, seed the selected record ───────────────────────────
   useEffect(() => {
@@ -903,9 +943,12 @@ export default function App() {
 
   const TABS = [
     { id:"dashboard", label:"Overview"       },
+    { id:"crossref",  label:"Cross-Ref",  isNew:true },
+    { id:"temporal",  label:"Temporal",    isNew:true },
     { id:"pipeline",  label:"Pipeline"       },
-    { id:"rules",     label:"Rules"          },
     { id:"profiles",  label:"Profiles"       },
+    { id:"workflow",  label:"Workflow",    isNew:true },
+    { id:"rules",     label:"Rules"          },
     { id:"lineage",   label:"Lineage"        },
     { id:"conflicts", label:"Conflicts"      },
     { id:"validation",label:"Validation Lab" },
@@ -2084,8 +2127,452 @@ export default function App() {
     );
   };
 
+  // ── Sparkline Component ──────────────────────────────────────────────────────
+  const Sparkline = ({ values, width=120, height=30, color }) => {
+    if (!values || values.length < 2) return <div style={{ width, height }}/>;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    const c = color || (values[values.length-1] >= values[0] ? T.green : T.red);
+    const points = values.map((v, i) => {
+      const x = (i / (values.length - 1)) * width;
+      const y = height - ((v - min) / range) * (height - 4) - 2;
+      return `${x},${y}`;
+    }).join(" ");
+    return (
+      <svg width={width} height={height}>
+        <polyline points={points} fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"/>
+        <circle cx={width} cy={parseFloat(points.split(" ").pop().split(",")[1])} r="2" fill={c}/>
+      </svg>
+    );
+  };
+
+  // ── Cross-Reference Tab ────────────────────────────────────────────────────
+  const renderCrossRef = () => {
+    const stats = crossRefStats || { cross_held_companies:0, avg_holders:0, max_discrepancy_pct:0, total_shared_exposure:0 };
+    const data = crossRefs || [];
+    // Build network graph data
+    const bdcSet = new Set();
+    data.slice(0,15).forEach(x => x.holders.forEach(h => bdcSet.add(h.source_bdc)));
+    const bdcs = [...bdcSet];
+
+    return (
+      <div>
+        <div style={{ marginBottom:24 }}>
+          <h2 style={S.h2}>Cross-Reference Graph</h2>
+          <p style={S.sub}>Companies held by multiple BDCs — valuation discrepancies signal pricing opportunities</p>
+        </div>
+        <div style={S.grid4}>
+          <MiniStat label="Cross-Held Companies" value={stats.cross_held_companies} color={T.gold}/>
+          <MiniStat label="Avg Holders" value={stats.avg_holders} color={T.blue}/>
+          <MiniStat label="Max Discrepancy" value={`${stats.max_discrepancy_pct}%`} color={stats.max_discrepancy_pct>10?T.red:T.amber}/>
+          <MiniStat label="Shared Exposure" value={stats.total_shared_exposure?`$${(stats.total_shared_exposure/1e9).toFixed(1)}B`:"—"} color={T.green}/>
+        </div>
+
+        {/* SVG Network Graph */}
+        <div style={{ ...S.card, marginBottom:20 }}>
+          <div style={S.secTitle}>BDC-Company Network</div>
+          <svg width="100%" viewBox="0 0 800 500" style={{ fontFamily:"'DM Mono', monospace" }}>
+            {/* BDC nodes on perimeter */}
+            {bdcs.map((bdc, i) => {
+              const angle = (i / Math.max(bdcs.length, 1)) * Math.PI * 2 - Math.PI/2;
+              const cx = 400 + Math.cos(angle) * 220;
+              const cy = 250 + Math.sin(angle) * 200;
+              return (
+                <g key={`bdc-${bdc}`}>
+                  <circle cx={cx} cy={cy} r="22" fill={T.navy3} stroke={T.gold} strokeWidth="2"/>
+                  <text x={cx} y={cy+4} textAnchor="middle" fill={T.gold} fontSize="9" fontWeight="700">{bdc}</text>
+                </g>
+              );
+            })}
+            {/* Company nodes in center + edges */}
+            {data.slice(0,12).map((co, i) => {
+              const angle = (i / Math.min(data.length, 12)) * Math.PI * 2;
+              const ccx = 400 + Math.cos(angle) * 90;
+              const ccy = 250 + Math.sin(angle) * 80;
+              const discColor = co.fv_range_pct > 15 ? T.red : co.fv_range_pct > 5 ? T.amber : T.green;
+              return (
+                <g key={`co-${i}`}>
+                  {co.holders.map((h, j) => {
+                    const bi = bdcs.indexOf(h.source_bdc);
+                    if (bi < 0) return null;
+                    const bAngle = (bi / Math.max(bdcs.length, 1)) * Math.PI * 2 - Math.PI/2;
+                    const bx = 400 + Math.cos(bAngle) * 220;
+                    const by = 250 + Math.sin(bAngle) * 200;
+                    return <line key={j} x1={bx} y1={by} x2={ccx} y2={ccy} stroke={discColor} strokeWidth="1" opacity="0.5"/>;
+                  })}
+                  <circle cx={ccx} cy={ccy} r="16" fill={T.navy2} stroke={discColor} strokeWidth="1.5"/>
+                  <text x={ccx} y={ccy-6} textAnchor="middle" fill={T.cream2} fontSize="6">
+                    {co.canonical_name.length > 16 ? co.canonical_name.slice(0,15)+"…" : co.canonical_name}
+                  </text>
+                  <text x={ccx} y={ccy+5} textAnchor="middle" fill={discColor} fontSize="7" fontWeight="700">
+                    {co.fv_range_pct.toFixed(0)}%
+                  </text>
+                </g>
+              );
+            })}
+            {/* Legend */}
+            <g transform="translate(20,460)">
+              {[{c:T.green,l:"<5% disc."},{c:T.amber,l:"5-15%"},{c:T.red,l:">15%"}].map((item,i) => (
+                <g key={i} transform={`translate(${i*100},0)`}>
+                  <line x1="0" y1="6" x2="20" y2="6" stroke={item.c} strokeWidth="2"/>
+                  <text x="24" y="10" fill={T.muted} fontSize="9">{item.l}</text>
+                </g>
+              ))}
+            </g>
+          </svg>
+        </div>
+
+        {/* Discrepancy Table */}
+        <div style={S.card}>
+          <div style={S.secTitle}>Discrepancy Table</div>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+            <thead><tr>{["Company","Holders","FV Range %","Total Exposure","Sectors",""].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {data.slice(0,20).map((co,i) => (
+                <React.Fragment key={i}>
+                  <tr style={{ cursor:"pointer" }} onClick={() => setCrossRefExpanded(crossRefExpanded===i?null:i)}>
+                    <td style={{ ...S.td, fontWeight:600, color:T.cream }}>{co.canonical_name}</td>
+                    <td style={{ ...S.td, fontFamily:"'DM Mono', monospace" }}>{co.holder_count}</td>
+                    <td style={{ ...S.td, color:co.fv_range_pct>15?T.red:co.fv_range_pct>5?T.amber:T.green, fontWeight:700, fontFamily:"'DM Mono', monospace" }}>{co.fv_range_pct.toFixed(1)}%</td>
+                    <td style={{ ...S.td, fontFamily:"'DM Mono', monospace" }}>{co.total_exposure_usd?`$${(co.total_exposure_usd/1e6).toFixed(1)}M`:"—"}</td>
+                    <td style={{ ...S.td, color:T.muted }}>{co.sectors?.join(", ")||"—"}</td>
+                    <td style={S.td}>{crossRefExpanded===i?"▼":"▶"}</td>
+                  </tr>
+                  {crossRefExpanded===i && co.holders.map((h,j) => (
+                    <tr key={`h-${j}`} style={{ background:T.navy3 }}>
+                      <td style={{ ...S.td, paddingLeft:32, color:T.muted2, fontSize:11 }}>↳ {h.source_bdc}</td>
+                      <td style={S.td}/>
+                      <td style={{ ...S.td, fontFamily:"'DM Mono', monospace", fontSize:11 }}>{h.fair_value_usd?`$${(h.fair_value_usd/1e6).toFixed(1)}M`:"—"}</td>
+                      <td style={{ ...S.td, fontFamily:"'DM Mono', monospace", fontSize:11 }}>{h.pricing_spread||"—"}</td>
+                      <td style={{ ...S.td, fontSize:11, color:T.muted }}>{h.facility_type||"—"}</td>
+                      <td style={{ ...S.td, fontSize:10, color:T.muted }}>{h.filing_date||""}</td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Temporal Tab ──────────────────────────────────────────────────────────
+  const renderTemporal = () => {
+    const stats = temporalStats || { companies_tracked:0, total_snapshots:0, warnings_count:0, critical_warnings:0 };
+    const warnings = temporalWarnings || [];
+    const sevColor = s => s==="critical"?T.red:s==="high"?T.amber:T.gold;
+
+    const handleBuild = async () => {
+      setTemporalBuilding(true);
+      await apiFetch("/temporal/build?bdc_ticker=ARCC&max_quarters=8", { method:"POST" });
+      // Wait a moment then refresh
+      setTimeout(async () => {
+        const [s, w] = await Promise.all([
+          apiFetch("/temporal/stats"),
+          apiFetch("/temporal/warnings?min_quarters=2"),
+        ]);
+        if (s) setTemporalStats(s);
+        if (w) setTemporalWarnings(w);
+        setTemporalBuilding(false);
+        addToast("Temporal index built", "success");
+      }, 3000);
+    };
+
+    const loadTimeline = async (name) => {
+      setTemporalSelectedCo(name);
+      const data = await apiFetch(`/temporal/timeline/${encodeURIComponent(name)}`);
+      if (data) setTemporalTimeline(data);
+    };
+
+    return (
+      <div>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24 }}>
+          <div>
+            <h2 style={S.h2}>Temporal Analysis</h2>
+            <p style={S.sub}>Track company valuations over time — detect early warning signals</p>
+          </div>
+          <button onClick={handleBuild} disabled={temporalBuilding}
+            style={{ background:temporalBuilding?T.navy3:T.gold, color:temporalBuilding?T.muted:T.navy, border:"none", borderRadius:5, padding:"9px 20px", cursor:temporalBuilding?"not-allowed":"pointer", fontSize:12, fontWeight:700, fontFamily:"'DM Mono', monospace" }}>
+            {temporalBuilding ? "⟳ Building..." : "▶ Build Index"}
+          </button>
+        </div>
+        <div style={S.grid4}>
+          <MiniStat label="Companies Tracked" value={stats.companies_tracked} color={T.gold}/>
+          <MiniStat label="Total Snapshots" value={stats.total_snapshots} color={T.blue}/>
+          <MiniStat label="Warnings" value={stats.warnings_count} color={stats.warnings_count>0?T.amber:T.green}/>
+          <MiniStat label="Critical" value={stats.critical_warnings} color={stats.critical_warnings>0?T.red:T.green}/>
+        </div>
+
+        {/* Early Warnings */}
+        {warnings.length > 0 && (
+          <div style={{ ...S.card, marginBottom:20 }}>
+            <div style={S.secTitle}>Early Warning Signals</div>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+              <thead><tr>{["Company","BDC","Quarters Declining","FV Change %","Current FV","Severity",""].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {warnings.slice(0,15).map((w,i) => (
+                  <tr key={i}>
+                    <td style={{ ...S.td, fontWeight:600, color:T.cream }}>{w.company_name}</td>
+                    <td style={{ ...S.td, color:T.gold }}>{w.source_bdc}</td>
+                    <td style={{ ...S.td, fontFamily:"'DM Mono', monospace", color:sevColor(w.severity) }}>{w.quarters_declining}Q</td>
+                    <td style={{ ...S.td, fontFamily:"'DM Mono', monospace", color:w.fv_change_pct<-10?T.red:T.amber }}>{w.fv_change_pct.toFixed(1)}%</td>
+                    <td style={{ ...S.td, fontFamily:"'DM Mono', monospace" }}>{w.current_fv?`$${(w.current_fv/1e6).toFixed(1)}M`:"—"}</td>
+                    <td style={S.td}><Badge label={w.severity} color={sevColor(w.severity)}/></td>
+                    <td style={S.td}>
+                      <button onClick={() => loadTimeline(w.company_name)} style={{ background:T.navy3, border:`1px solid ${T.border}`, borderRadius:4, padding:"3px 10px", color:T.gold, fontSize:10, cursor:"pointer", fontFamily:"'DM Mono', monospace" }}>Chart</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Timeline Detail */}
+        {temporalTimeline && temporalTimeline.snapshots?.length > 0 && (
+          <div style={S.card}>
+            <div style={S.secTitle}>{temporalTimeline.company_name} — Fair Value Timeline</div>
+            <div style={{ display:"flex", gap:16, marginBottom:12 }}>
+              <Badge label={`Trend: ${temporalTimeline.fv_trend}`} color={temporalTimeline.fv_trend==="declining"?T.red:temporalTimeline.fv_trend==="rising"?T.green:T.amber}/>
+              {temporalTimeline.quarters_declining > 0 && <Badge label={`${temporalTimeline.quarters_declining}Q declining`} color={T.red}/>}
+            </div>
+            {/* SVG Line Chart */}
+            {(() => {
+              const snaps = temporalTimeline.snapshots;
+              const fvs = snaps.map(s => s.fair_value_usd || 0);
+              const costs = snaps.map(s => s.cost_basis_usd || 0);
+              const allVals = [...fvs, ...costs].filter(v => v > 0);
+              if (allVals.length < 2) return null;
+              const minV = Math.min(...allVals) * 0.95;
+              const maxV = Math.max(...allVals) * 1.05;
+              const W = 600, H = 250, pad = 40;
+              const toX = i => pad + (i / Math.max(snaps.length - 1, 1)) * (W - pad * 2);
+              const toY = v => pad + (1 - (v - minV) / (maxV - minV || 1)) * (H - pad * 2);
+              const fvLine = fvs.map((v,i) => `${toX(i)},${toY(v)}`).join(" ");
+              const costLine = costs.map((v,i) => `${toX(i)},${toY(v)}`).join(" ");
+              return (
+                <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ fontFamily:"'DM Mono', monospace" }}>
+                  {/* Grid lines */}
+                  {[0.25,0.5,0.75].map(p => {
+                    const y = pad + p * (H - pad*2);
+                    const val = maxV - p * (maxV - minV);
+                    return <g key={p}><line x1={pad} y1={y} x2={W-pad} y2={y} stroke={T.border} strokeWidth="0.5" strokeDasharray="3"/><text x={4} y={y+3} fill={T.muted} fontSize="8">${(val/1e6).toFixed(0)}M</text></g>;
+                  })}
+                  {/* Cost line */}
+                  <polyline points={costLine} fill="none" stroke={T.muted} strokeWidth="1.5" strokeDasharray="4" opacity="0.6"/>
+                  {/* FV line */}
+                  <polyline points={fvLine} fill="none" stroke={T.green} strokeWidth="2"/>
+                  {fvs.map((v,i) => <circle key={i} cx={toX(i)} cy={toY(v)} r="3" fill={T.green}/>)}
+                  {/* X-axis labels */}
+                  {snaps.map((s,i) => <text key={i} x={toX(i)} y={H-5} textAnchor="middle" fill={T.muted} fontSize="7">{s.period?.slice(0,7)}</text>)}
+                  {/* Legend */}
+                  <g transform={`translate(${W-160},${pad-15})`}>
+                    <line x1="0" y1="0" x2="15" y2="0" stroke={T.green} strokeWidth="2"/>
+                    <text x="20" y="4" fill={T.muted} fontSize="8">Fair Value</text>
+                    <line x1="80" y1="0" x2="95" y2="0" stroke={T.muted} strokeWidth="1.5" strokeDasharray="4"/>
+                    <text x="100" y="4" fill={T.muted} fontSize="8">Cost</text>
+                  </g>
+                </svg>
+              );
+            })()}
+            <Sparkline values={temporalTimeline.snapshots.map(s => s.fair_value_usd || 0)} width={200} height={40}/>
+          </div>
+        )}
+
+        {stats.companies_tracked === 0 && warnings.length === 0 && (
+          <div style={{ ...S.card, textAlign:"center", padding:50 }}>
+            <div style={{ fontSize:13, color:T.muted }}>Click "Build Index" to generate temporal snapshots from BDC filing history.</div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── Workflow Tab ──────────────────────────────────────────────────────────
+  const renderWorkflow = () => {
+    const reviews = dealReviews || [];
+    const exp = exposure || { total_portfolio_usd:0, by_sector:{}, by_bdc:{}, by_facility_type:{}, non_accrual_exposure_usd:0, concentration_alerts:[] };
+    const WVTABS = [
+      { id:"board", label:"Deal Board" },
+      { id:"exposure", label:"Exposure" },
+      { id:"compliance", label:"Compliance" },
+    ];
+    const statusCols = ["pending","under_review","approved","closed"];
+    const statusLabels = { pending:"Pending", under_review:"Under Review", approved:"Approved", closed:"Closed" };
+    const statusColors = { pending:T.amber, under_review:T.blue, approved:T.green, closed:T.muted };
+    const prioColors = { high:T.red, medium:T.amber, low:T.green };
+
+    const handleNewReview = async () => {
+      if (!newReviewName.trim()) return;
+      const data = await apiFetch("/workflow/reviews", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ company_name:newReviewName.trim(), priority:"medium" }),
+      });
+      if (data) { setDealReviews(prev => [data, ...(prev||[])]); setNewReviewName(""); addToast("Review created","success"); }
+    };
+
+    const moveReview = async (id, newStatus) => {
+      const data = await apiFetch(`/workflow/reviews/${id}`, {
+        method:"PATCH",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ status:newStatus }),
+      });
+      if (data) setDealReviews(prev => (prev||[]).map(r => r.id===id ? data : r));
+    };
+
+    // Donut chart helper
+    const DonutChart = ({ data, size=200, title }) => {
+      const total = Object.values(data).reduce((s,v) => s + v, 0);
+      if (!total) return null;
+      const entries = Object.entries(data).sort((a,b) => b[1]-a[1]).slice(0,8);
+      const colors = [T.gold, T.blue, T.green, T.amber, T.purple, T.red, T.cream2, T.muted];
+      let startAngle = 0;
+      const r = size*0.35, cx = size/2, cy = size/2;
+      return (
+        <div style={{ textAlign:"center" }}>
+          <div style={S.secTitle}>{title}</div>
+          <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            {entries.map(([name,val],i) => {
+              const pct = val/total;
+              const angle = pct * Math.PI * 2;
+              const x1 = cx + r * Math.cos(startAngle);
+              const y1 = cy + r * Math.sin(startAngle);
+              const x2 = cx + r * Math.cos(startAngle + angle);
+              const y2 = cy + r * Math.sin(startAngle + angle);
+              const large = angle > Math.PI ? 1 : 0;
+              const d = `M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${large} 1 ${x2},${y2} Z`;
+              startAngle += angle;
+              return <path key={i} d={d} fill={colors[i%colors.length]} opacity="0.85"/>;
+            })}
+            <circle cx={cx} cy={cy} r={r*0.55} fill={T.navy2}/>
+            <text x={cx} y={cy-4} textAnchor="middle" fill={T.cream} fontSize="14" fontWeight="700" fontFamily="'Playfair Display', serif">
+              ${(total/1e9).toFixed(1)}B
+            </text>
+            <text x={cx} y={cy+10} textAnchor="middle" fill={T.muted} fontSize="8">Total</text>
+          </svg>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6, justifyContent:"center", marginTop:8 }}>
+            {entries.slice(0,6).map(([name,val],i) => (
+              <span key={i} style={{ fontSize:9, color:T.muted, fontFamily:"'DM Mono', monospace" }}>
+                <span style={{ color:colors[i%colors.length] }}>■</span> {name.length>15?name.slice(0,14)+"…":name} {(val/total*100).toFixed(0)}%
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div>
+        <div style={{ marginBottom:24 }}>
+          <h2 style={S.h2}>Workflow</h2>
+          <p style={S.sub}>Deal reviews, portfolio exposure, and concentration compliance</p>
+        </div>
+        <div style={{ display:"flex", gap:4, marginBottom:20, borderBottom:`1px solid ${T.border}`, paddingBottom:12 }}>
+          {WVTABS.map(vt => (
+            <button key={vt.id} onClick={() => setWorkflowVtab(vt.id)}
+              style={{ background:workflowVtab===vt.id?T.navy3:"transparent", color:workflowVtab===vt.id?T.gold2:T.muted2, border:`1px solid ${workflowVtab===vt.id?T.border2:"transparent"}`, borderRadius:4, padding:"6px 16px", cursor:"pointer", fontSize:11, fontWeight:600, fontFamily:"'DM Mono', monospace" }}>
+              {vt.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Deal Board */}
+        {workflowVtab === "board" && (
+          <div>
+            <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+              <input value={newReviewName} onChange={e => setNewReviewName(e.target.value)}
+                onKeyDown={e => e.key==="Enter" && handleNewReview()}
+                placeholder="Company name for new review..."
+                style={{ flex:1, padding:"8px 12px", background:T.navy3, border:`1px solid ${T.border}`, borderRadius:4, color:T.cream, fontSize:12, fontFamily:"'DM Mono', monospace", outline:"none" }}/>
+              <button onClick={handleNewReview}
+                style={{ background:T.gold, color:T.navy, border:"none", borderRadius:4, padding:"8px 18px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"'DM Mono', monospace" }}>+ New Review</button>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12 }}>
+              {statusCols.map(status => (
+                <div key={status} style={{ background:T.navy2, border:`1px solid ${T.border}`, borderRadius:8, padding:12, minHeight:300 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, paddingBottom:8, borderBottom:`2px solid ${statusColors[status]}44` }}>
+                    <div style={{ width:8, height:8, borderRadius:"50%", background:statusColors[status] }}/>
+                    <span style={{ fontSize:11, fontWeight:700, color:T.cream, textTransform:"uppercase", letterSpacing:"0.08em", fontFamily:"'DM Mono', monospace" }}>{statusLabels[status]}</span>
+                    <span style={{ fontSize:10, color:T.muted, marginLeft:"auto", fontFamily:"'DM Mono', monospace" }}>
+                      {reviews.filter(r => r.status===status).length}
+                    </span>
+                  </div>
+                  {reviews.filter(r => r.status===status).map(r => (
+                    <div key={r.id} style={{ background:T.navy3, border:`1px solid ${T.border}`, borderRadius:6, padding:"10px 12px", marginBottom:8, borderLeft:`3px solid ${prioColors[r.priority]||T.muted}` }}>
+                      <div style={{ fontSize:11, fontWeight:600, color:T.cream, marginBottom:4 }}>{r.company_name}</div>
+                      {r.assignee && <div style={{ fontSize:9, color:T.muted, marginBottom:4 }}>→ {r.assignee}</div>}
+                      {r.notes && <div style={{ fontSize:9, color:T.muted2, marginBottom:6 }}>{r.notes.length>50?r.notes.slice(0,50)+"…":r.notes}</div>}
+                      <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+                        {statusCols.filter(s => s!==status).map(s => (
+                          <button key={s} onClick={() => moveReview(r.id, s)}
+                            style={{ background:T.navy2, border:`1px solid ${T.border}`, borderRadius:3, padding:"2px 8px", color:statusColors[s], fontSize:8, cursor:"pointer", fontFamily:"'DM Mono', monospace" }}>
+                            → {statusLabels[s]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Exposure */}
+        {workflowVtab === "exposure" && (
+          <div>
+            <div style={S.grid4}>
+              <MiniStat label="Total Portfolio" value={exp.total_portfolio_usd?`$${(exp.total_portfolio_usd/1e9).toFixed(2)}B`:"—"} color={T.gold}/>
+              <MiniStat label="Sectors" value={Object.keys(exp.by_sector).length} color={T.blue}/>
+              <MiniStat label="BDCs" value={Object.keys(exp.by_bdc).length} color={T.green}/>
+              <MiniStat label="Non-Accrual" value={exp.non_accrual_exposure_usd?`$${(exp.non_accrual_exposure_usd/1e6).toFixed(0)}M`:"$0"} color={exp.non_accrual_exposure_usd>0?T.red:T.green}/>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:16 }}>
+              <div style={S.card}><DonutChart data={exp.by_sector} title="By Sector"/></div>
+              <div style={S.card}><DonutChart data={exp.by_bdc} title="By BDC"/></div>
+              <div style={S.card}><DonutChart data={exp.by_facility_type} title="By Facility Type"/></div>
+            </div>
+          </div>
+        )}
+
+        {/* Compliance */}
+        {workflowVtab === "compliance" && (
+          <div style={S.card}>
+            <div style={S.secTitle}>Concentration Limits</div>
+            <div style={{ marginBottom:16, fontSize:12, color:T.muted }}>
+              Sector max: 25% · Single name max: 5% · Non-accrual max: 10%
+            </div>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+              <thead><tr>{["Dimension","Name","Current Exposure","Limit %","Current %","Status"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {(exp.concentration_alerts||[]).map((c,i) => (
+                  <tr key={i}>
+                    <td style={S.td}>{c.dimension}</td>
+                    <td style={{ ...S.td, fontWeight:600, color:T.cream }}>{c.name}</td>
+                    <td style={{ ...S.td, fontFamily:"'DM Mono', monospace" }}>{c.current_exposure_usd?`$${(c.current_exposure_usd/1e6).toFixed(1)}M`:"—"}</td>
+                    <td style={{ ...S.td, fontFamily:"'DM Mono', monospace" }}>{c.limit_pct}%</td>
+                    <td style={{ ...S.td, fontFamily:"'DM Mono', monospace", color:c.breached?T.red:T.green }}>{c.current_pct}%</td>
+                    <td style={S.td}><Badge label={c.breached?"BREACHED":"OK"} color={c.breached?T.red:T.green}/></td>
+                  </tr>
+                ))}
+                {(!exp.concentration_alerts||exp.concentration_alerts.length===0) && (
+                  <tr><td colSpan="6" style={{ ...S.td, textAlign:"center", color:T.muted }}>No concentration data — build exposure report first</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderContent = () => {
     if (tab==="dashboard")  return renderDashboard();
+    if (tab==="crossref")   return renderCrossRef();
+    if (tab==="temporal")   return renderTemporal();
     if (tab==="pipeline")   return renderPipeline();
     if (tab==="rules")      return renderRules();
     if (tab==="profiles")   return renderProfiles();
@@ -2093,6 +2580,7 @@ export default function App() {
     if (tab==="conflicts")  return renderConflicts();
     if (tab==="validation") return renderValidation();
     if (tab==="research")   return renderResearch();
+    if (tab==="workflow")   return renderWorkflow();
   };
 
   const apiOnline = apiStatus?.status === "ok";
@@ -2126,12 +2614,46 @@ export default function App() {
           {TABS.map(t => (
             <button key={t.id} style={S.navBtn(tab===t.id)} onClick={() => setTab(t.id)}>
               {t.label}
-              {(t.id==="validation" || t.id==="research") && (
+              {t.isNew && (
                 <span style={{ marginLeft:6, background:`${T.gold}30`, color:T.gold, borderRadius:3, padding:"1px 5px", fontSize:9, fontFamily:"'DM Mono', monospace" }}>NEW</span>
               )}
             </button>
           ))}
         </nav>
+        {/* Alert Bell */}
+        <div style={{ position:"relative", cursor:"pointer" }} onClick={() => setAlertsOpen(!alertsOpen)}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2C10.34 2 9 3.34 9 5V5.29C6.72 6.15 5 8.38 5 11V17L3 19V20H21V19L19 17V11C19 8.38 17.28 6.15 15 5.29V5C15 3.34 13.66 2 12 2ZM12 22C13.1 22 14 21.1 14 20H10C10 21.1 10.9 22 12 22Z" fill={T.muted}/>
+          </svg>
+          {monitorAlerts && monitorAlerts.filter(a => !a.read).length > 0 && (
+            <div style={{ position:"absolute", top:-4, right:-4, width:16, height:16, borderRadius:"50%", background:T.red, display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, fontWeight:700, color:"#fff", fontFamily:"'DM Mono', monospace" }}>
+              {Math.min(monitorAlerts.filter(a => !a.read).length, 99)}
+            </div>
+          )}
+          {/* Alert dropdown */}
+          {alertsOpen && (
+            <div style={{ position:"absolute", top:30, right:0, width:360, maxHeight:400, overflowY:"auto", background:T.navy, border:`1px solid ${T.border}`, borderRadius:8, boxShadow:"0 8px 32px rgba(0,0,0,0.6)", zIndex:1100 }}>
+              <div style={{ padding:"10px 14px", borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <span style={{ fontSize:11, fontWeight:700, color:T.cream, fontFamily:"'DM Mono', monospace" }}>ALERTS</span>
+                <button onClick={async (e) => { e.stopPropagation(); await apiFetch("/monitor/alerts/read-all", { method:"POST" }); const d = await apiFetch("/monitor/alerts?limit=20"); if (d) setMonitorAlerts(d); }}
+                  style={{ background:T.navy3, border:`1px solid ${T.border}`, borderRadius:4, padding:"3px 10px", color:T.muted, fontSize:9, cursor:"pointer", fontFamily:"'DM Mono', monospace" }}>Mark all read</button>
+              </div>
+              {(monitorAlerts||[]).slice(0,10).map(a => {
+                const sevC = a.severity==="high"||a.severity==="critical"?T.red:a.severity==="medium"?T.amber:T.muted;
+                return (
+                  <div key={a.id} style={{ padding:"8px 14px", borderBottom:`1px solid ${T.navy3}`, borderLeft:`3px solid ${sevC}`, background:a.read?"transparent":`${T.navy3}88`, fontSize:11, color:T.cream2, fontFamily:"'DM Mono', monospace", lineHeight:1.5 }}
+                    onClick={async (e) => { e.stopPropagation(); await apiFetch(`/monitor/alerts/${a.id}/read`, { method:"POST" }); setMonitorAlerts(prev => prev?.map(x => x.id===a.id ? {...x, read:true} : x)); }}>
+                    <div style={{ color:a.read?T.muted:T.cream }}>{a.message}</div>
+                    {a.source_bdc && <div style={{ fontSize:9, color:T.muted, marginTop:2 }}>{a.source_bdc} · {a.alert_type}</div>}
+                  </div>
+                );
+              })}
+              {(!monitorAlerts || monitorAlerts.length === 0) && (
+                <div style={{ padding:20, textAlign:"center", color:T.muted, fontSize:11 }}>No alerts yet</div>
+              )}
+            </div>
+          )}
+        </div>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <div style={{ width:7, height:7, borderRadius:"50%", background: apiStatus === null ? T.amber : apiOnline ? T.green : T.red, boxShadow:`0 0 7px ${apiStatus === null ? T.amber : apiOnline ? T.green : T.red}` }}/>
           <span style={{ fontSize:10, color:T.muted, fontFamily:"'DM Mono', monospace", letterSpacing:"0.1em" }}>
