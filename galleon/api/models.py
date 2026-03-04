@@ -80,6 +80,16 @@ class FieldValueOut(BaseModel):
     status: str = "extracted"
 
 
+# ── Field Lineage ────────────────────────────────────────────────────────
+
+class FieldLineageOut(BaseModel):
+    field_name: str
+    company_id: str
+    candidates: List[FieldValueOut] = []
+    winner: Optional[FieldValueOut] = None
+    resolution_method: Optional[str] = None
+
+
 # ── Pipeline ──────────────────────────────────────────────────────────────────
 
 class PipelineStepOut(BaseModel):
@@ -108,6 +118,22 @@ class ConflictOut(BaseModel):
     field: str
     delta: Optional[str] = None
     sources: Optional[List[str]] = None
+    detected_at: str
+
+
+class ConflictCandidateOut(BaseModel):
+    source: str
+    value: Optional[str] = None
+    confidence: float = 0.0
+
+
+class ConflictDetailOut(BaseModel):
+    id: str
+    company: Optional[str] = None
+    field: str
+    candidates: List[ConflictCandidateOut] = []
+    winner: Optional[str] = None
+    resolution_method: Optional[str] = None
     detected_at: str
 
 

@@ -771,6 +771,68 @@ def get_ground_truth(gt_id: str) -> Optional[Dict[str, Any]]:
         put_conn(conn)
 
 
+def get_field_candidates(company_id: str, field_name: str) -> List[Dict[str, Any]]:
+    """Return all field value candidates for a given company + field (including non-current)."""
+    conn = get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT * FROM field_values
+                WHERE company_id = %s AND field_name = %s
+                ORDER BY confidence_score DESC
+                """,
+                (company_id, field_name),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    except Exception as exc:
+        print(f"[db] get_field_candidates failed: {exc}")
+        return []
+    finally:
+        put_conn(conn)
+
+
+def get_conflict_detail(conflict_id: str) -> Optional[Dict[str, Any]]:
+    """Return a single conflict with candidate field values."""
+    conn = get_conn()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT fc.*, c.canonical_name AS company
+                FROM field_conflicts fc
+                LEFT JOIN companies c ON c.id = fc.company_id
+                WHERE fc.id = %s
+                """,
+                (conflict_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            result = dict(row)
+            # Get candidate values for the conflicted field
+            cur.execute(
+                """
+                SELECT fv.normalized_value, fv.source_type, fv.confidence_score
+                FROM field_values fv
+                WHERE fv.company_id = %s AND fv.field_name = %s
+                ORDER BY fv.confidence_score DESC
+                """,
+                (row["company_id"], row["field_name"]),
+            )
+            result["candidates"] = [dict(r) for r in cur.fetchall()]
+            return result
+    except Exception as exc:
+        print(f"[db] get_conflict_detail failed: {exc}")
+        return None
+    finally:
+        put_conn(conn)
+
+
 def update_document_status(document_id: str, status: str, fields_extracted: int = 0) -> None:
     conn = get_conn()
     if conn is None:

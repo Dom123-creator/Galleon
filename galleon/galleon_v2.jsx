@@ -268,6 +268,30 @@ function ConfBar({ val, color, width=64 }) {
   );
 }
 
+function Skeleton({ width="100%", height=16, style={} }) {
+  return (
+    <div style={{ width, height, borderRadius:4, background:`linear-gradient(90deg, ${T.navy3} 25%, ${T.navy4||"#1a3355"} 50%, ${T.navy3} 75%)`, backgroundSize:"200% 100%", animation:"shimmer 1.5s infinite", ...style }}>
+      <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
+    </div>
+  );
+}
+
+function ErrorBanner({ message, onRetry }) {
+  return (
+    <div style={{ background:`${T.red}15`, border:`1px solid ${T.red}44`, borderRadius:8, padding:"14px 18px", marginBottom:16, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+        <span style={{ color:T.red, fontSize:16 }}>!</span>
+        <span style={{ color:T.cream2, fontSize:12, fontFamily:"'DM Mono', monospace" }}>{message}</span>
+      </div>
+      {onRetry && (
+        <button onClick={onRetry} style={{ background:T.navy3, color:T.cream2, border:`1px solid ${T.border}`, borderRadius:4, padding:"5px 14px", cursor:"pointer", fontSize:11, fontFamily:"'DM Mono', monospace" }}>
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Divider() {
   return (
     <div style={{ display:"flex", alignItems:"center", gap:12, margin:"20px 0" }}>
@@ -288,7 +312,9 @@ function MiniStat({ label, value, color, sub }) {
   );
 }
 
-function LineageGraph() {
+function LineageGraph({ nodes, edges }) {
+  const displayNodes = nodes || LIN_NODES;
+  const displayEdges = edges || LIN_EDGES;
   return (
     <svg width="100%" viewBox="0 0 840 340" style={{ fontFamily:"'DM Mono', monospace" }}>
       <defs>
@@ -296,14 +322,15 @@ function LineageGraph() {
           <path d="M0,0 L0,6 L7,3 z" fill={T.border2}/>
         </marker>
       </defs>
-      {LIN_EDGES.map(([f,t],i) => {
-        const a = LIN_NODES.find(n=>n.id===f), b = LIN_NODES.find(n=>n.id===t);
+      {displayEdges.map(([f,t],i) => {
+        const a = displayNodes.find(n=>n.id===f), b = displayNodes.find(n=>n.id===t);
+        if (!a || !b) return null;
         const mx = (a.x+b.x)/2;
         return <path key={i} d={`M${a.x+110},${a.y+16} C${mx+55},${a.y+16} ${mx+55},${b.y+16} ${b.x},${b.y+16}`}
           fill="none" stroke={T.border2} strokeWidth="1.5" markerEnd="url(#arr)" opacity="0.8"/>;
       })}
-      {LIN_NODES.map(n => {
-        const ac = nodeAccent[n.type];
+      {displayNodes.map(n => {
+        const ac = nodeAccent[n.type] || T.muted;
         return (
           <g key={n.id} transform={`translate(${n.x},${n.y})`}>
             <rect width="110" height="32" rx="4" fill={T.navy2} stroke={ac} strokeWidth="1.2" opacity="0.95"/>
@@ -574,11 +601,39 @@ export default function App() {
 
   // ── Upload state ─────────────────────────────────────────────────────────────
   const fileInputRef = useRef(null);
+  const [uploadCompanyName, setUploadCompanyName] = useState("");
   const [uploadFile,        setUploadFile]        = useState(null);
   const [uploadStatus,      setUploadStatus]      = useState(null); // null|uploading|running|complete|failed
   const [activePipeline,    setActivePipeline]    = useState(null);
   const [livePipelineSteps, setLivePipelineSteps] = useState([]);
   const [livePipelineResult,setLivePipelineResult]= useState(null);
+
+  // ── Research tab state ──────────────────────────────────────────────────────
+  const [researchQuery,   setResearchQuery]   = useState("");
+  const [researchResults, setResearchResults] = useState(null);
+  const [researchLoading, setResearchLoading] = useState(false);
+  const [researchSources, setResearchSources] = useState(new Set(["fdic","usaspending","opencorporates","ucc","bdc"]));
+
+  // ── Error state ──────────────────────────────────────────────────────────────
+  const [apiErrors, setApiErrors] = useState({});
+
+  // ── Toast state ─────────────────────────────────────────────────────────────
+  const [toasts, setToasts] = useState([]);
+  const addToast = (message, type="info") => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  };
+
+  // ── Responsive ─────────────────────────────────────────────────────────────
+  const [winWidth, setWinWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 1200);
+  useEffect(() => {
+    const handleResize = () => setWinWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+  const isMobile = winWidth < 768;
+  const isTablet = winWidth < 1024;
 
   // ── EDGAR pull state ─────────────────────────────────────────────────────────
   const [edgarPipelineId, setEdgarPipelineId] = useState(null);
@@ -601,15 +656,22 @@ export default function App() {
   }, [pipelineRunning]);
 
   // ── Initial API fetch ────────────────────────────────────────────────────────
-  useEffect(() => {
-    apiFetch("/health").then(d => setApiStatus(d));
-    apiFetch("/companies").then(d => { if (d) setApiCompanies(d); });
-    apiFetch("/documents").then(d => { if (d) setApiDocuments(d); });
-    apiFetch("/rules").then(d => { if (d) setApiRules(d); });
-    apiFetch("/edgar/ground-truth").then(d => { if (d) setApiGT(d); });
-    apiFetch("/validation/benchmark").then(d => { if (d) setApiBenchmark(d); });
-    apiFetch("/conflicts").then(d => { if (d) setApiConflicts(d); });
-  }, []);
+  const fetchWithError = (path, setter, key) => {
+    apiFetch(path).then(d => {
+      if (d) { setter(d); setApiErrors(prev => { const n = {...prev}; delete n[key]; return n; }); }
+      else { setApiErrors(prev => ({...prev, [key]: `Failed to fetch ${path}`})); }
+    });
+  };
+  const refreshAll = () => {
+    fetchWithError("/health", setApiStatus, "health");
+    fetchWithError("/companies", setApiCompanies, "companies");
+    fetchWithError("/documents", setApiDocuments, "documents");
+    fetchWithError("/rules", setApiRules, "rules");
+    fetchWithError("/edgar/ground-truth", setApiGT, "gt");
+    fetchWithError("/validation/benchmark", setApiBenchmark, "benchmark");
+    fetchWithError("/conflicts", setApiConflicts, "conflicts");
+  };
+  useEffect(() => { refreshAll(); }, []);
 
   // ── When GT data arrives, seed the selected record ───────────────────────────
   useEffect(() => {
@@ -668,6 +730,7 @@ export default function App() {
         if (status.status === "complete" || status.status === "failed") {
           setUploadStatus(status.status);
           clearInterval(t);
+          addToast(status.status === "complete" ? "Upload extraction complete" : "Upload extraction failed", status.status === "complete" ? "success" : "error");
           apiFetch("/companies").then(d => { if (d) setApiCompanies(d); });
           apiFetch("/documents").then(d => { if (d) setApiDocuments(d); });
         }
@@ -685,6 +748,7 @@ export default function App() {
         setEdgarRunStatus(status.status);
         setPipelineRunning(false);
         clearInterval(t);
+        addToast(status.status === "complete" ? "EDGAR pull complete" : "EDGAR pull failed", status.status === "complete" ? "success" : "error");
         if (status.status === "complete") {
           apiFetch("/edgar/ground-truth").then(d => { if (d) setApiGT(d); });
           apiFetch("/validation/benchmark").then(d => { if (d) setApiBenchmark(d); });
@@ -734,7 +798,7 @@ export default function App() {
 
   const uiRules = useMemo(() => {
     if (!apiRules || apiRules.length === 0) return RULE_ENGINE;
-    return apiRules.map(r => ({ id: r.rule_id, name: r.name, field: r.field, type: r.type, rule: r.logic || "", pattern: r.logic || "", conf: r.base_confidence }));
+    return apiRules.map(r => ({ id: r.rule_id, name: r.name, field: r.field, type: r.type, rule: r.logic || "", pattern: r.logic || "", conf: r.base_confidence, pass_rate: r.pass_rate }));
   }, [apiRules]);
 
   const uiGT = useMemo(() => {
@@ -796,7 +860,7 @@ export default function App() {
     setLivePipelineResult(null);
     const fd = new FormData();
     fd.append("file", uploadFile);
-    fd.append("company_name", uploadFile.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
+    fd.append("company_name", uploadCompanyName.trim() || uploadFile.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
     const res = await apiFetch("/documents/upload", { method: "POST", body: fd });
     if (!res?.pipeline_id) { setUploadStatus("failed"); return; }
     setActivePipeline(res.pipeline_id);
@@ -815,6 +879,24 @@ export default function App() {
     if (res?.pipeline_id) setEdgarPipelineId(res.pipeline_id);
   };
 
+  const handleResearchSearch = async () => {
+    if (!researchQuery.trim()) return;
+    setResearchLoading(true);
+    setResearchResults(null);
+    const sources = [...researchSources].join(",");
+    const data = await apiFetch(`/search/multi?q=${encodeURIComponent(researchQuery.trim())}&sources=${sources}`);
+    setResearchResults(data);
+    setResearchLoading(false);
+  };
+
+  const toggleResearchSource = (src) => {
+    setResearchSources(prev => {
+      const next = new Set(prev);
+      if (next.has(src)) next.delete(src); else next.add(src);
+      return next;
+    });
+  };
+
   const TABS = [
     { id:"dashboard", label:"Overview"       },
     { id:"pipeline",  label:"Pipeline"       },
@@ -823,19 +905,20 @@ export default function App() {
     { id:"lineage",   label:"Lineage"        },
     { id:"conflicts", label:"Conflicts"      },
     { id:"validation",label:"Validation Lab" },
+    { id:"research",  label:"Research"       },
   ];
 
   const S = {
     app:    { background:T.navy, minHeight:"100vh", color:T.cream2 },
-    header: { background:T.navy2, borderBottom:`1px solid ${T.border}`, padding:"0 36px", display:"flex", alignItems:"center", gap:28, height:58 },
-    logo:   { display:"flex", alignItems:"center", gap:10, color:T.gold, fontFamily:"'Playfair Display', serif", fontSize:20, fontWeight:700, letterSpacing:"0.04em" },
-    nav:    { display:"flex", gap:2, flex:1 },
-    navBtn: a => ({ background:a?T.navy3:"transparent", color:a?T.gold2:T.muted2, border:a?`1px solid ${T.border2}`:"1px solid transparent", borderRadius:4, padding:"6px 14px", cursor:"pointer", fontSize:11, fontWeight:600, letterSpacing:"0.05em", fontFamily:"'DM Mono', monospace", transition:"all 0.15s", position:"relative" }),
-    main:   { padding:"28px 36px", maxWidth:1400, margin:"0 auto" },
-    card:   { background:T.navy2, border:`1px solid ${T.border}`, borderRadius:8, padding:22 },
-    grid2:  { display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 },
-    grid3:  { display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:16, marginBottom:20 },
-    grid4:  { display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:14, marginBottom:20 },
+    header: { background:T.navy2, borderBottom:`1px solid ${T.border}`, padding:isMobile?"0 12px":"0 36px", display:"flex", alignItems:"center", gap:isMobile?12:28, height:58 },
+    logo:   { display:"flex", alignItems:"center", gap:10, color:T.gold, fontFamily:"'Playfair Display', serif", fontSize:isMobile?16:20, fontWeight:700, letterSpacing:"0.04em" },
+    nav:    { display:"flex", gap:2, flex:1, overflowX:isMobile?"auto":"visible", flexWrap:isMobile?"nowrap":"wrap" },
+    navBtn: a => ({ background:a?T.navy3:"transparent", color:a?T.gold2:T.muted2, border:a?`1px solid ${T.border2}`:"1px solid transparent", borderRadius:4, padding:"6px 14px", cursor:"pointer", fontSize:11, fontWeight:600, letterSpacing:"0.05em", fontFamily:"'DM Mono', monospace", transition:"all 0.15s", position:"relative", whiteSpace:"nowrap" }),
+    main:   { padding:isMobile?"16px 12px":"28px 36px", maxWidth:1400, margin:"0 auto" },
+    card:   { background:T.navy2, border:`1px solid ${T.border}`, borderRadius:8, padding:isMobile?14:22 },
+    grid2:  { display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr", gap:16, marginBottom:20 },
+    grid3:  { display:"grid", gridTemplateColumns:isMobile?"1fr":isTablet?"1fr 1fr":"1fr 1fr 1fr", gap:16, marginBottom:20 },
+    grid4:  { display:"grid", gridTemplateColumns:isMobile?"1fr 1fr":isTablet?"repeat(2,1fr)":"repeat(4,1fr)", gap:14, marginBottom:20 },
     h2:     { fontSize:22, fontWeight:700, color:T.cream, fontFamily:"'Playfair Display', serif", letterSpacing:"0.01em", margin:0 },
     sub:    { color:T.muted, fontSize:13, marginTop:5, marginBottom:0 },
     secTitle:{ fontSize:11, fontWeight:700, color:T.gold, textTransform:"uppercase", letterSpacing:"0.12em", marginBottom:14, fontFamily:"'DM Mono', monospace" },
@@ -843,8 +926,22 @@ export default function App() {
     td:     { padding:"10px 12px", borderBottom:`1px solid ${T.navy3}`, color:T.cream2, verticalAlign:"middle" },
   };
 
+  // ── Loading skeleton helper ──────────────────────────────────────────────────
+  const renderLoadingSkeleton = () => (
+    <div>
+      <div style={S.grid4}>
+        {[1,2,3,4].map(i => <div key={i} style={S.card}><Skeleton height={28} width={80} style={{ marginBottom:8 }}/><Skeleton height={12} width={120}/></div>)}
+      </div>
+      <div style={S.grid2}>
+        <div style={S.card}>{[1,2,3].map(i => <Skeleton key={i} height={16} style={{ marginBottom:12 }}/>)}</div>
+        <div style={S.card}>{[1,2,3].map(i => <Skeleton key={i} height={16} style={{ marginBottom:12 }}/>)}</div>
+      </div>
+    </div>
+  );
+
   // ── Dashboard ──────────────────────────────────────────────────────────────
   const renderDashboard = () => {
+    if (apiCompanies === null && apiDocuments === null && !apiStatus) return renderLoadingSkeleton();
     const kpiItems = [
       {
         v: apiCompanies ? String(apiCompanies.length) : "247",
@@ -986,6 +1083,12 @@ export default function App() {
                 {uploadFile.name} ({(uploadFile.size/1024).toFixed(0)} KB)
               </span>
             )}
+            <input
+              type="text" placeholder="Company name (optional)"
+              value={uploadCompanyName}
+              onChange={e => setUploadCompanyName(e.target.value)}
+              style={{ background:T.navy3, border:`1px solid ${T.border}`, borderRadius:5, padding:"8px 12px", color:T.cream, fontSize:12, fontFamily:"'DM Mono', monospace", outline:"none", width:200 }}
+            />
             <button
               onClick={handleUpload}
               disabled={!uploadFile || uploadStatus === "uploading" || uploadStatus === "running"}
@@ -1062,20 +1165,24 @@ export default function App() {
   };
 
   // ── Rules ──────────────────────────────────────────────────────────────────
-  const renderRules = () => (
+  const renderRules = () => {
+    // Compute rule type summary from actual data
+    const ruleTypeCounts = useMemo(() => {
+      const counts = {};
+      uiRules.forEach(r => { counts[r.type] = (counts[r.type] || 0) + 1; });
+      const labelMap = { regex:"Regex / Format", derived:"Derived Fields", covenant:"Covenant Checks", unit:"Unit Normalize", logical:"Logical Sanity", numeric:"Numeric Norm", lookup:"Lookup", date:"Date Parse" };
+      const colorMap = { regex:T.blue, derived:T.green, covenant:T.amber, unit:T.gold, logical:T.purple, numeric:T.blue, lookup:T.purple, date:T.green };
+      return Object.entries(counts).map(([type, n]) => ({ n, l: labelMap[type] || type, c: colorMap[type] || T.muted }));
+    }, [uiRules]);
+
+    return (
     <div>
       <div style={{ marginBottom:24 }}>
         <h2 style={S.h2}>Rule Engine</h2>
-        <p style={S.sub}>141 deterministic validators — regex, logical, derived, covenant, unit normalizers</p>
+        <p style={S.sub}>{uiRules.length} deterministic validators — regex, logical, derived, covenant, unit normalizers</p>
       </div>
-      <div style={{ display:"flex", gap:14, marginBottom:20 }}>
-        {[
-          { n:48, l:"Regex / Format", c:T.blue  },
-          { n:31, l:"Derived Fields", c:T.green  },
-          { n:24, l:"Covenant Checks",c:T.amber  },
-          { n:22, l:"Unit Normalize", c:T.gold   },
-          { n:16, l:"Logical Sanity", c:T.purple },
-        ].map((r,i) => (
+      <div style={{ display:"flex", gap:14, marginBottom:20, flexWrap:"wrap" }}>
+        {ruleTypeCounts.map((r,i) => (
           <div key={i} style={{ background:T.navy3, border:`1px solid ${r.c}33`, borderRadius:6, padding:"14px 20px", minWidth:120, textAlign:"center" }}>
             <div style={{ fontSize:26, fontWeight:700, color:r.c, fontFamily:"'Playfair Display', serif" }}>{r.n}</div>
             <div style={{ fontSize:10, color:T.muted, marginTop:4, textTransform:"uppercase", letterSpacing:"0.07em", fontFamily:"'DM Mono', monospace" }}>{r.l}</div>
@@ -1085,7 +1192,7 @@ export default function App() {
       <div style={S.card}>
         <div style={S.secTitle}>Rule Registry — Active Rules {apiRules && <span style={{ color:T.muted, fontWeight:400 }}>({uiRules.length} loaded from API)</span>}</div>
         <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
-          <thead><tr>{["Rule ID","Name","Target Field","Type","Logic","Confidence"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <thead><tr>{["Rule ID","Name","Target Field","Type","Logic","Confidence","Pass Rate"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
           <tbody>
             {uiRules.map(r => (
               <tr key={r.id}>
@@ -1095,6 +1202,7 @@ export default function App() {
                 <td style={S.td}><Badge label={r.type} color={ruleColor(r.type)}/></td>
                 <td style={{ ...S.td, fontFamily:"'DM Mono', monospace", fontSize:11, color:T.muted }}>{r.rule||r.pattern}</td>
                 <td style={S.td}><ConfBar val={r.conf} color={r.conf===1.0?T.green:T.amber}/></td>
+                <td style={S.td}>{r.pass_rate != null ? <ConfBar val={r.pass_rate/100} color={r.pass_rate>=90?T.green:r.pass_rate>=70?T.amber:T.red}/> : <span style={{ color:T.muted2, fontSize:11 }}>—</span>}</td>
               </tr>
             ))}
           </tbody>
@@ -1119,6 +1227,7 @@ export default function App() {
       </div>
     </div>
   );
+  };
 
   // ── Profiles ───────────────────────────────────────────────────────────────
   const renderProfiles = () => (
@@ -1127,8 +1236,8 @@ export default function App() {
         <h2 style={S.h2}>Credit Profiles</h2>
         <p style={S.sub}>Normalized company data with field-level provenance tracking</p>
       </div>
-      <div style={{ display:"flex", gap:16 }}>
-        <div style={{ width:210, flexShrink:0 }}>
+      <div style={{ display:"flex", gap:16, flexDirection:isMobile?"column":"row" }}>
+        <div style={{ width:isMobile?"100%":210, flexShrink:0 }}>
           {uiCompanies.map(c => (
             <div key={c.id} onClick={() => setCompany(c)}
               style={{ padding:"10px 14px", marginBottom:6, borderRadius:6, cursor:"pointer", background:company?.id===c.id?T.navy3:"transparent", border:`1px solid ${company?.id===c.id?T.border2:"transparent"}`, transition:"all 0.15s" }}>
@@ -1210,6 +1319,41 @@ export default function App() {
     </div>
   );
 
+  // ── Dynamic lineage graph from companyFields ──────────────────────────────
+  const dynamicLineage = useMemo(() => {
+    if (!companyFields || companyFields.length === 0) return null;
+    // Collect unique sources and extraction methods
+    const sources = new Set();
+    const methods = new Set();
+    companyFields.forEach(f => {
+      if (f.source_document || f.source_type) sources.add(stripUuid(f.source_document || f.source_type || "Source"));
+      if (f.extraction_method) methods.add(f.extraction_method);
+    });
+    const srcArr = [...sources].slice(0, 4);
+    const methArr = [...methods].slice(0, 2);
+    const nodes = [];
+    const edges = [];
+    // Source nodes (left column)
+    srcArr.forEach((s, i) => {
+      nodes.push({ id: `s${i}`, label: s.length > 14 ? s.slice(0,13)+"…" : s, x: 55, y: 60 + i * 70, type: "source" });
+      edges.push([`s${i}`, "ext"]);
+    });
+    // Extraction node
+    nodes.push({ id: "ext", label: "Text Extraction", x: 215, y: 100, type: "process" });
+    // Method nodes
+    methArr.forEach((m, i) => {
+      const label = m.replace(/_/g, " ");
+      nodes.push({ id: `m${i}`, label: label.length > 14 ? label.slice(0,13)+"…" : label, x: 375, y: 70 + i * 100, type: i === 0 ? "process" : "ai" });
+      edges.push(["ext", `m${i}`]);
+      edges.push([`m${i}`, "resolve"]);
+    });
+    if (methArr.length === 0) edges.push(["ext", "resolve"]);
+    nodes.push({ id: "resolve", label: "Conflict Resolve", x: 535, y: 140, type: "process" });
+    nodes.push({ id: "out", label: "Credit Profile", x: 695, y: 140, type: "output" });
+    edges.push(["resolve", "out"]);
+    return { nodes, edges };
+  }, [companyFields]);
+
   // ── Lineage ────────────────────────────────────────────────────────────────
   const renderLineage = () => (
     <div>
@@ -1219,7 +1363,7 @@ export default function App() {
       </div>
       <div style={{ ...S.card, marginBottom:20 }}>
         <div style={S.secTitle}>{company?.name||"Meridian Industrial Corp"} — Data Flow</div>
-        <LineageGraph/>
+        <LineageGraph nodes={dynamicLineage?.nodes} edges={dynamicLineage?.edges}/>
         <div style={{ display:"flex", gap:24, marginTop:10, justifyContent:"center" }}>
           {Object.entries(nodeAccent).map(([type,color]) => (
             <div key={type} style={{ display:"flex", alignItems:"center", gap:6, fontSize:11, color:T.muted }}>
@@ -1622,6 +1766,231 @@ export default function App() {
     );
   };
 
+  // ── Research ─────────────────────────────────────────────────────────────────
+  const renderResearch = () => {
+    const SOURCE_LABELS = [
+      { key:"fdic",           label:"FDIC" },
+      { key:"usaspending",    label:"USASpending" },
+      { key:"opencorporates", label:"OpenCorporates" },
+      { key:"ucc",            label:"UCC" },
+      { key:"bdc",            label:"BDC EDGAR" },
+    ];
+
+    const pillStyle = (active) => ({
+      background: active ? `${T.gold}25` : T.navy3,
+      color: active ? T.gold : T.muted2,
+      border: `1px solid ${active ? T.gold : T.border}`,
+      borderRadius: 20, padding: "4px 14px", cursor: "pointer",
+      fontSize: 10, fontWeight: 600, letterSpacing: "0.06em",
+      fontFamily: "'DM Mono', monospace", transition: "all 0.15s",
+    });
+
+    const hasResults = researchResults && (
+      (researchResults.bdc?.length > 0) ||
+      (researchResults.fdic?.length > 0) ||
+      (researchResults.usaspending?.length > 0) ||
+      (researchResults.opencorporates?.length > 0) ||
+      (researchResults.ucc?.length > 0)
+    );
+
+    return (
+      <div>
+        <div style={{ marginBottom: 24 }}>
+          <h2 style={S.h2}>Multi-Source Research</h2>
+          <p style={S.sub}>Search across SEC EDGAR, FDIC, USASpending, OpenCorporates, and UCC records simultaneously</p>
+        </div>
+
+        {/* Search bar */}
+        <div style={{ ...S.card, marginBottom: 16, display: "flex", gap: 10, alignItems: "center" }}>
+          <input
+            type="text" placeholder="Search company name..."
+            value={researchQuery}
+            onChange={e => setResearchQuery(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleResearchSearch()}
+            style={{
+              flex: 1, background: T.navy3, border: `1px solid ${T.border}`, borderRadius: 4,
+              padding: "10px 14px", color: T.cream, fontSize: 13, fontFamily: "'DM Mono', monospace",
+              outline: "none",
+            }}
+            onFocus={e => e.target.style.borderColor = T.gold}
+            onBlur={e => e.target.style.borderColor = T.border}
+          />
+          <button
+            onClick={handleResearchSearch}
+            disabled={researchLoading || !researchQuery.trim()}
+            style={{
+              background: T.gold, color: T.navy, border: "none", borderRadius: 4,
+              padding: "10px 24px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+              fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em",
+              opacity: (researchLoading || !researchQuery.trim()) ? 0.5 : 1,
+            }}
+          >
+            {researchLoading ? "Searching..." : "Search"}
+          </button>
+        </div>
+
+        {/* Source toggles */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+          {SOURCE_LABELS.map(s => (
+            <button key={s.key} style={pillStyle(researchSources.has(s.key))} onClick={() => toggleResearchSource(s.key)}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Loading */}
+        {researchLoading && (
+          <div style={{ ...S.card, textAlign: "center", padding: 40 }}>
+            <div style={{ color: T.gold, fontSize: 13, fontFamily: "'DM Mono', monospace", animation: "pulse 1.5s infinite" }}>
+              Searching across {researchSources.size} source{researchSources.size !== 1 ? "s" : ""}...
+            </div>
+            <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }`}</style>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!researchResults && !researchLoading && (
+          <div style={{ ...S.card, textAlign: "center", padding: 50 }}>
+            <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.8 }}>
+              Enter a company name to search across SEC EDGAR, FDIC, USASpending, OpenCorporates, and UCC records.
+            </div>
+          </div>
+        )}
+
+        {/* No results */}
+        {researchResults && !hasResults && !researchLoading && (
+          <div style={{ ...S.card, textAlign: "center", padding: 50 }}>
+            <div style={{ fontSize: 13, color: T.muted }}>No results found across selected sources.</div>
+          </div>
+        )}
+
+        {/* Results */}
+        {researchResults && hasResults && !researchLoading && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+            {/* BDC EDGAR */}
+            {researchResults.bdc?.length > 0 && (
+              <div style={S.card}>
+                <div style={S.secTitle}>BDC EDGAR</div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead><tr>
+                      {["Company","BDC","Spread","Fair Value","Maturity"].map(h => <th key={h} style={S.th}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>{researchResults.bdc.map((r, i) => (
+                      <tr key={i}>
+                        <td style={S.td}>{r.company_name}</td>
+                        <td style={S.td}>{r.source_bdc}</td>
+                        <td style={S.td}>{r.pricing_spread || "—"}</td>
+                        <td style={S.td}>{r.fair_value_usd ? `$${(r.fair_value_usd / 1e6).toFixed(1)}M` : "—"}</td>
+                        <td style={S.td}>{r.maturity_date || "—"}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* FDIC */}
+            {researchResults.fdic?.length > 0 && (
+              <div style={S.card}>
+                <div style={S.secTitle}>FDIC Institutions</div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead><tr>
+                      {["Institution","Cert","State","Total Assets","ROA","Status"].map(h => <th key={h} style={S.th}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>{researchResults.fdic.map((r, i) => (
+                      <tr key={i}>
+                        <td style={S.td}>{r.institution_name || r.name}</td>
+                        <td style={S.td}>{r.cert || "—"}</td>
+                        <td style={S.td}>{r.state || "—"}</td>
+                        <td style={S.td}>{r.total_assets ? `$${(r.total_assets / 1e6).toFixed(0)}M` : "—"}</td>
+                        <td style={S.td}>{r.roa != null ? r.roa.toFixed(2) : "—"}</td>
+                        <td style={S.td}>{r.active_flag === 1 ? "Active" : r.active_flag === 0 ? "Inactive" : r.status || "—"}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* USASpending */}
+            {researchResults.usaspending?.length > 0 && (
+              <div style={S.card}>
+                <div style={S.secTitle}>USASpending Awards</div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead><tr>
+                      {["Recipient","Amount","Agency","Type","Date"].map(h => <th key={h} style={S.th}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>{researchResults.usaspending.map((r, i) => (
+                      <tr key={i}>
+                        <td style={S.td}>{r.recipient_name || "—"}</td>
+                        <td style={S.td}>{r.total_obligation ? `$${Number(r.total_obligation).toLocaleString()}` : "—"}</td>
+                        <td style={S.td}>{r.awarding_agency || "—"}</td>
+                        <td style={S.td}>{r.award_type || "—"}</td>
+                        <td style={S.td}>{r.start_date || r.date || "—"}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* OpenCorporates */}
+            {researchResults.opencorporates?.length > 0 && (
+              <div style={S.card}>
+                <div style={S.secTitle}>OpenCorporates</div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead><tr>
+                      {["Company","Jurisdiction","Status","Incorporated","Address"].map(h => <th key={h} style={S.th}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>{researchResults.opencorporates.map((r, i) => (
+                      <tr key={i}>
+                        <td style={S.td}>{r.name || r.company_name}</td>
+                        <td style={S.td}>{r.jurisdiction || "—"}</td>
+                        <td style={S.td}>{r.status || "—"}</td>
+                        <td style={S.td}>{r.incorporation_date || "—"}</td>
+                        <td style={S.td}>{r.registered_address || "—"}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* UCC */}
+            {researchResults.ucc?.length > 0 && (
+              <div style={S.card}>
+                <div style={S.secTitle}>UCC Filings</div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead><tr>
+                      {["Type","Debtor","Secured Party","Date","Jurisdiction","Source"].map(h => <th key={h} style={S.th}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>{researchResults.ucc.map((r, i) => (
+                      <tr key={i}>
+                        <td style={S.td}>{r.filing_type || "—"}</td>
+                        <td style={S.td}>{r.debtor_name || "—"}</td>
+                        <td style={S.td}>{r.secured_party || "—"}</td>
+                        <td style={S.td}>{r.filing_date || "—"}</td>
+                        <td style={S.td}>{r.jurisdiction || "—"}</td>
+                        <td style={S.td}>{r.source || "—"}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderContent = () => {
     if (tab==="dashboard")  return renderDashboard();
     if (tab==="pipeline")   return renderPipeline();
@@ -1630,6 +1999,7 @@ export default function App() {
     if (tab==="lineage")    return renderLineage();
     if (tab==="conflicts")  return renderConflicts();
     if (tab==="validation") return renderValidation();
+    if (tab==="research")   return renderResearch();
   };
 
   const apiOnline = apiStatus?.status === "ok";
@@ -1663,7 +2033,7 @@ export default function App() {
           {TABS.map(t => (
             <button key={t.id} style={S.navBtn(tab===t.id)} onClick={() => setTab(t.id)}>
               {t.label}
-              {t.id==="validation" && (
+              {(t.id==="validation" || t.id==="research") && (
                 <span style={{ marginLeft:6, background:`${T.gold}30`, color:T.gold, borderRadius:3, padding:"1px 5px", fontSize:9, fontFamily:"'DM Mono', monospace" }}>NEW</span>
               )}
             </button>
@@ -1685,7 +2055,32 @@ export default function App() {
       </div>
 
       <div style={{ height:1, background:`linear-gradient(to right, transparent 5%, ${T.gold}44 30%, ${T.gold}44 70%, transparent 95%)` }}/>
-      <div style={S.main}>{renderContent()}</div>
+      <div style={S.main}>
+        {Object.keys(apiErrors).length > 0 && (
+          <ErrorBanner message={`API errors: ${Object.values(apiErrors).join(", ")}`} onRetry={refreshAll}/>
+        )}
+        {renderContent()}
+      </div>
+
+      {/* Toast notifications */}
+      {toasts.length > 0 && (
+        <div style={{ position:"fixed", top:16, right:16, zIndex:1100, display:"flex", flexDirection:"column", gap:8 }}>
+          {toasts.map(t => (
+            <div key={t.id} style={{
+              background: t.type === "success" ? "#0a2218" : t.type === "error" ? `${T.red}20` : T.navy2,
+              border: `1px solid ${t.type === "success" ? T.green : t.type === "error" ? T.red : T.border}44`,
+              borderRadius: 8, padding: "10px 18px", minWidth: 240,
+              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+              fontSize: 12, color: T.cream, fontFamily: "'DM Mono', monospace",
+              animation: "fadeIn 0.2s ease-out",
+            }}>
+              <span style={{ marginRight:8 }}>{t.type === "success" ? "✓" : t.type === "error" ? "✗" : "ℹ"}</span>
+              {t.message}
+            </div>
+          ))}
+          <style>{`@keyframes fadeIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }`}</style>
+        </div>
+      )}
 
       <GalleonAssistant
         onNavigate={setTab}
