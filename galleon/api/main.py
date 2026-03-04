@@ -33,8 +33,11 @@ from .models import (
     CompanyOut,
     CompanySearchResult,
     CompanySummary,
+    ConflictCandidateOut,
+    ConflictDetailOut,
     ConflictOut,
     ConflictResolveRequest,
+    FieldLineageOut,
     DocumentOut,
     FdicFailureOut,
     FdicFinancialsOut,
@@ -101,9 +104,12 @@ def startup_event():
     connected = db.is_connected()
     print(f"[galleon] API v{VERSION} starting — DB connected: {connected}")
 
-    # Auto-build BDC universe index if stale
+    # Try loading cached BDC index first, then build if stale
     try:
-        from bdc_index import is_stale  # type: ignore
+        from bdc_index import is_stale, load_index  # type: ignore
+        loaded = load_index()
+        if loaded:
+            print("[galleon] BDC index loaded from cache")
         if is_stale():
             print("[galleon] BDC universe index is stale — triggering background build")
             pipeline_id = str(uuid.uuid4())
@@ -296,6 +302,59 @@ def get_company_fields(company_id: str, category: Optional[str] = None):
             status=fdata.get("status", "extracted"),
         ))
     return out
+
+
+@app.get("/companies/{company_id}/fields/{field_name}/lineage", response_model=FieldLineageOut, tags=["companies"])
+def get_field_lineage(company_id: str, field_name: str):
+    """Return all candidate values for a specific field, showing provenance lineage."""
+    # Try DB first
+    candidates = db.get_field_candidates(company_id, field_name)
+    if candidates:
+        candidate_outs = [_field_row_to_out(c) for c in candidates]
+        winner = candidate_outs[0] if candidate_outs else None
+        return FieldLineageOut(
+            field_name=field_name,
+            company_id=company_id,
+            candidates=candidate_outs,
+            winner=winner,
+            resolution_method="highest_confidence",
+        )
+
+    # In-memory fallback: search pipeline results
+    all_candidates = []
+    for mem in reversed(list(_pipelines.values())):
+        if mem.get("company_id") != company_id or mem.get("status") != "complete":
+            continue
+        result = mem.get("result", {})
+        for cand in result.get("all_candidates", []):
+            if cand.get("field_name") == field_name:
+                all_candidates.append(FieldValueOut(
+                    id=None,
+                    field_name=cand.get("field_name", field_name),
+                    field_category=cand.get("field_category", "general"),
+                    raw_value=cand.get("raw_value"),
+                    normalized_value=cand.get("normalized_value"),
+                    numeric_value=cand.get("numeric_value"),
+                    source_type=cand.get("source_type", "extraction"),
+                    source_document=cand.get("source_document"),
+                    source_page=cand.get("source_page"),
+                    source_snippet=cand.get("source_snippet"),
+                    extraction_method=cand.get("extraction_method", "pattern_match"),
+                    confidence_score=float(cand.get("confidence_score", 0.0)),
+                    rule_id=cand.get("rule_id"),
+                    status=cand.get("status", "extracted"),
+                ))
+        if all_candidates:
+            break
+
+    winner = all_candidates[0] if all_candidates else None
+    return FieldLineageOut(
+        field_name=field_name,
+        company_id=company_id,
+        candidates=all_candidates,
+        winner=winner,
+        resolution_method="highest_confidence" if all_candidates else None,
+    )
 
 
 @app.get("/companies/{company_id}/profile", tags=["companies"])
@@ -607,6 +666,64 @@ def list_conflicts():
         )
         for r in rows
     ]
+
+
+@app.get("/conflicts/{conflict_id}", response_model=ConflictDetailOut, tags=["conflicts"])
+def get_conflict_detail(conflict_id: str):
+    """Return detailed conflict with all candidate values."""
+    row = db.get_conflict_detail(conflict_id)
+    if row:
+        candidates = [
+            ConflictCandidateOut(
+                source=c.get("source_type", "unknown"),
+                value=c.get("normalized_value"),
+                confidence=float(c.get("confidence_score", 0.0)),
+            )
+            for c in row.get("candidates", [])
+        ]
+        winner = candidates[0].value if candidates else None
+        return ConflictDetailOut(
+            id=str(row["id"]),
+            company=row.get("company"),
+            field=row.get("field_name", ""),
+            candidates=candidates,
+            winner=winner,
+            resolution_method="highest_confidence" if candidates else None,
+            detected_at=str(row.get("detected_at", "")),
+        )
+
+    # In-memory fallback: check _pipelines for conflicts
+    for mem in reversed(list(_pipelines.values())):
+        result = mem.get("result", {})
+        for res in result.get("resolutions", []):
+            if str(res.get("id", "")) == conflict_id or res.get("field_name") == conflict_id:
+                winner_data = res.get("winner", {})
+                losers = res.get("losers", [])
+                candidates = [
+                    ConflictCandidateOut(
+                        source=winner_data.get("source_type", "winner"),
+                        value=winner_data.get("normalized_value"),
+                        confidence=float(winner_data.get("confidence_score", 0.0)),
+                    )
+                ] + [
+                    ConflictCandidateOut(
+                        source=l.get("source_type", "loser"),
+                        value=l.get("normalized_value"),
+                        confidence=float(l.get("confidence_score", 0.0)),
+                    )
+                    for l in losers
+                ]
+                return ConflictDetailOut(
+                    id=conflict_id,
+                    company=_company_id_to_name.get(mem.get("company_id", ""), None),
+                    field=res.get("field_name", ""),
+                    candidates=candidates,
+                    winner=winner_data.get("normalized_value"),
+                    resolution_method=res.get("method", "highest_confidence"),
+                    detected_at=mem.get("started_at", ""),
+                )
+
+    raise HTTPException(status_code=404, detail="Conflict not found")
 
 
 @app.post("/conflicts/{conflict_id}/resolve", tags=["conflicts"])
@@ -1229,6 +1346,28 @@ def _static_rules() -> List[RuleOut]:
         RuleOut(rule_id="R008", name="Spread bps Norm",     field="pricing_spread",   type="unit",    logic="convert % -> bps",            base_confidence=1.000),
         RuleOut(rule_id="R009", name="FV / Cost Ratio",     field="fair_value_usd",   type="logical", logic="0.50 <= fv/cost <= 1.10",     base_confidence=0.900),
     ]
+
+
+# ── Serve React frontend (built static files) ───────────────────────────────
+# Must be AFTER all API routes so /api-style routes take priority.
+
+_UI_DIST = Path(__file__).resolve().parent.parent.parent / "ui" / "dist"
+
+if _UI_DIST.is_dir():
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+
+    @app.get("/", include_in_schema=False)
+    def serve_index():
+        return FileResponse(_UI_DIST / "index.html")
+
+    # Catch-all for client-side routes (React Router)
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_spa(full_path: str):
+        file = _UI_DIST / full_path
+        if file.is_file():
+            return FileResponse(file)
+        return FileResponse(_UI_DIST / "index.html")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

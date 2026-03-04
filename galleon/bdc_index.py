@@ -37,6 +37,7 @@ _flat_index: List[Dict] = []             # denormalized for fuzzy search
 _last_indexed: Optional[datetime] = None
 
 INDEX_TTL_HOURS = 24
+INDEX_FILE = _HERE / "data" / "bdc_index_cache.json"
 
 # ── BDC seed list (top 25, confirmed CIKs) ────────────────────────────────────
 BDC_SEED: Dict[str, str] = {
@@ -61,10 +62,10 @@ BDC_SEED: Dict[str, str] = {
     "KCAP":  "0001372514",  # Portman Ridge Finance Corp
     "MRCC":  "0001451448",  # Monroe Capital BDC Advisors LLC
     "ORCC":  "0001655050",  # Owl Rock Capital Corporation
-    "GSBD":  "0001655888",  # Goldman Sachs BDC Inc. (shares filing entity placeholder)
-    "OCSL":  "0001655888",  # Oaktree Specialty Lending Corp (placeholder)
-    "FDUS":  "0001396440",  # Fidus Investment Corp (placeholder)
-    "OBDC":  "0001655888",  # Blue Owl Capital Corp (placeholder)
+    "GSBD":  "0001572694",  # Goldman Sachs BDC Inc.
+    "OCSL":  "0001414932",  # Oaktree Specialty Lending Corp
+    "FDUS":  "0001479290",  # Fidus Investment Corp
+    "OBDC":  "0001544206",  # Blue Owl Capital Corp
 }
 
 HEADERS    = {"User-Agent": "Galleon Research contact@galleon.io"}
@@ -232,15 +233,26 @@ def fetch_bdc_ciks_from_edgar(max_results: int = 100) -> Dict[str, str]:
 def fetch_schedule_of_investments(cik: str, bdc_name: str) -> List[Dict]:
     """
     Pull latest 10-K for this BDC and extract portfolio companies via XBRL.
-    For ARCC, returns the well-known seed portfolio.
-    For other BDCs, attempts EDGAR submission metadata.
+    Tries the XBRL parser first; falls back to seed data (ARCC) or placeholder.
     Returns list of company dicts with EDGAR-sourced loan terms.
     """
-    # For ARCC, return full seed portfolio with deal terms
+    # Try XBRL parser first (real EDGAR data)
+    try:
+        from pipeline.xbrl_parser import parse_schedule_for_bdc
+        xbrl_result = parse_schedule_for_bdc(cik, bdc_name)
+        if xbrl_result:
+            print(f"[bdc_index] {bdc_name}: XBRL parser returned {len(xbrl_result)} companies")
+            return xbrl_result
+    except ImportError:
+        print(f"[bdc_index] xbrl_parser not available, using fallback for {bdc_name}")
+    except Exception as exc:
+        print(f"[bdc_index] XBRL parse failed for {bdc_name}: {exc}")
+
+    # Fallback: For ARCC, return seed portfolio with deal terms
     if cik == "0001287750":
         return _get_arcc_companies(bdc_name)
 
-    # For other BDCs, fetch submission metadata to confirm they're indexed
+    # Fallback: For other BDCs, fetch submission metadata for placeholder
     try:
         time.sleep(0.11)  # ~9 req/sec
         url = f"{EDGAR_BASE}/submissions/CIK{cik}.json"
@@ -327,6 +339,54 @@ def _get_extra_arcc_companies(bdc_name: str) -> List[Dict]:
     ]
 
 
+# ── Persistence ──────────────────────────────────────────────────────────────
+
+def save_index() -> None:
+    """Serialize _flat_index and metadata to JSON cache file."""
+    import json
+    try:
+        INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "flat_index": _flat_index,
+            "universe_tickers": list(_universe.keys()),
+            "last_indexed": _last_indexed.isoformat() if _last_indexed else None,
+        }
+        INDEX_FILE.write_text(json.dumps(payload, default=str), encoding="utf-8")
+        print(f"[bdc_index] Index saved to {INDEX_FILE} ({len(_flat_index)} companies)")
+    except Exception as exc:
+        print(f"[bdc_index] Failed to save index: {exc}")
+
+
+def load_index() -> bool:
+    """Load index from JSON cache. Returns True if loaded successfully."""
+    import json
+    global _universe, _flat_index, _last_indexed
+
+    if not INDEX_FILE.exists():
+        return False
+    try:
+        data = json.loads(INDEX_FILE.read_text(encoding="utf-8"))
+        flat = data.get("flat_index", [])
+        if not flat:
+            return False
+
+        _flat_index = flat
+        _last_indexed = datetime.fromisoformat(data["last_indexed"]) if data.get("last_indexed") else datetime.utcnow()
+
+        # Rebuild _universe from flat_index grouped by source_bdc
+        new_universe: Dict[str, List[Dict]] = {}
+        for co in _flat_index:
+            ticker = co.get("source_bdc", "UNKNOWN")
+            new_universe.setdefault(ticker, []).append(co)
+        _universe = new_universe
+
+        print(f"[bdc_index] Index loaded from cache: {len(_universe)} BDCs, {len(_flat_index)} companies")
+        return True
+    except Exception as exc:
+        print(f"[bdc_index] Failed to load index cache: {exc}")
+        return False
+
+
 # ── Universe builder ──────────────────────────────────────────────────────────
 
 def build_universe(max_bdcs: int = 25) -> None:
@@ -365,6 +425,7 @@ def build_universe(max_bdcs: int = 25) -> None:
     _last_indexed = datetime.utcnow()
 
     print(f"[bdc_index] Universe built: {len(_universe)} BDCs, {len(_flat_index)} companies indexed.")
+    save_index()
 
 
 # ── Search ────────────────────────────────────────────────────────────────────
@@ -421,7 +482,8 @@ def _get_resolver():
     try:
         from pipeline.edgar_bdc import EntityResolver  # type: ignore
         return EntityResolver()
-    except ImportError:
+    except Exception:
+        # ImportError or TypeError (Python <3.10 can't parse str | None in edgar_bdc)
         return _SimpleEntityResolver()
 
 
@@ -444,8 +506,15 @@ class _SimpleEntityResolver:
 # ── Staleness check ───────────────────────────────────────────────────────────
 
 def is_stale() -> bool:
-    """Returns True if index is empty or older than INDEX_TTL_HOURS."""
+    """Returns True if index is empty or older than INDEX_TTL_HOURS.
+    Tries loading from cache before declaring stale."""
     if not _flat_index or _last_indexed is None:
+        # Try loading from cache file
+        if load_index():
+            # Check age of cached data
+            if _last_indexed is not None:
+                age_hours = (datetime.utcnow() - _last_indexed).total_seconds() / 3600
+                return age_hours > INDEX_TTL_HOURS
         return True
     age_hours = (datetime.utcnow() - _last_indexed).total_seconds() / 3600
     return age_hours > INDEX_TTL_HOURS
