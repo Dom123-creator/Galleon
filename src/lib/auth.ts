@@ -10,6 +10,8 @@ const DEV_CLERK_ID = "dev_user_001";
 // Dev-compatible replacement for Clerk's auth() — returns { userId } for API routes
 export async function getAuthUserId(): Promise<{ userId: string | null }> {
   if (DEV_MODE) {
+    // Ensure dev user exists in DB (routes do their own findUnique by clerkId)
+    await getOrCreateDevUser();
     return { userId: DEV_CLERK_ID };
   }
   const { auth } = await import("@clerk/nextjs/server");
