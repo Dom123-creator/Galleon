@@ -36,12 +36,22 @@ from .models import (
     ConflictOut,
     ConflictResolveRequest,
     DocumentOut,
+    FdicFailureOut,
+    FdicFinancialsOut,
+    FdicInstitutionOut,
     FieldValueOut,
     GroundTruthOut,
     HealthOut,
+    MultiSourceSearchOut,
+    OpenCorpCompanyOut,
+    OpenCorpOfficerOut,
     PipelineOut,
     PipelineStepOut,
+    RecipientProfileOut,
     RuleOut,
+    SbaLoanOut,
+    UccFilingOut,
+    UsaSpendingAwardOut,
 )
 
 # ── Path setup ────────────────────────────────────────────────────────────────
@@ -676,6 +686,209 @@ def trigger_bdc_index(background_tasks: BackgroundTasks, max_bdcs: int = 25):
     }
     background_tasks.add_task(_run_bdc_index_background, pipeline_id=pipeline_id, max_bdcs=max_bdcs)
     return {"pipeline_id": pipeline_id, "status": "running"}
+
+
+# ── FDIC ───────────────────────────────────────────────────────────────────────
+
+@app.get("/fdic/institutions", response_model=List[FdicInstitutionOut], tags=["fdic"])
+def search_fdic_institutions(q: str = "", limit: int = 10):
+    """Search FDIC for bank institutions by name."""
+    if not q.strip():
+        return []
+    try:
+        from clients.fdic_client import search_institutions  # type: ignore
+        results = search_institutions(q.strip(), limit=limit)
+        return [FdicInstitutionOut(**r) for r in results]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/fdic/financials/{cert}", response_model=List[FdicFinancialsOut], tags=["fdic"])
+def get_fdic_financials(cert: str, limit: int = 4):
+    """Get quarterly financials for a bank by FDIC certificate number."""
+    try:
+        from clients.fdic_client import get_financials  # type: ignore
+        results = get_financials(cert, limit=limit)
+        return [FdicFinancialsOut(**r) for r in results]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/fdic/failures", response_model=List[FdicFailureOut], tags=["fdic"])
+def search_fdic_failures(q: str = "", limit: int = 10):
+    """Search FDIC failed bank list."""
+    if not q.strip():
+        return []
+    try:
+        from clients.fdic_client import get_failures  # type: ignore
+        results = get_failures(q.strip(), limit=limit)
+        return [FdicFailureOut(**r) for r in results]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── USASpending ────────────────────────────────────────────────────────────────
+
+@app.get("/usaspending/awards", response_model=List[UsaSpendingAwardOut], tags=["usaspending"])
+def search_usaspending_awards(q: str = "", award_type: Optional[str] = None, limit: int = 10):
+    """Search USASpending.gov for federal awards (contracts, grants, loans)."""
+    if not q.strip():
+        return []
+    try:
+        from clients.usaspending_client import search_awards  # type: ignore
+        results = search_awards(q.strip(), award_type=award_type, limit=limit)
+        return [UsaSpendingAwardOut(**r) for r in results]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/usaspending/recipient", response_model=Optional[RecipientProfileOut], tags=["usaspending"])
+def get_usaspending_recipient(name: str = ""):
+    """Look up a recipient profile on USASpending.gov."""
+    if not name.strip():
+        return None
+    try:
+        from clients.usaspending_client import get_recipient_profile  # type: ignore
+        result = get_recipient_profile(name.strip())
+        return RecipientProfileOut(**result) if result else None
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── SBA ────────────────────────────────────────────────────────────────────────
+
+@app.get("/sba/loans", response_model=List[SbaLoanOut], tags=["sba"])
+def search_sba_loans(q: str = "", limit: int = 10):
+    """Search SBA loan data by recipient name."""
+    if not q.strip():
+        return []
+    try:
+        from clients.sba_client import search_sba_loans as _search  # type: ignore
+        results = _search(q.strip(), limit=limit)
+        return [SbaLoanOut(**r) for r in results]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── OpenCorporates ─────────────────────────────────────────────────────────────
+
+@app.get("/opencorporates/companies", response_model=List[OpenCorpCompanyOut], tags=["opencorporates"])
+def search_opencorporates_companies(q: str = "", jurisdiction: Optional[str] = None, limit: int = 10):
+    """Search OpenCorporates for company registration data."""
+    if not q.strip():
+        return []
+    try:
+        from clients.opencorporates_client import search_companies  # type: ignore
+        results = search_companies(q.strip(), jurisdiction=jurisdiction, limit=limit)
+        return [OpenCorpCompanyOut(**r) for r in results]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/opencorporates/officers", response_model=List[OpenCorpOfficerOut], tags=["opencorporates"])
+def search_opencorporates_officers(q: str = "", limit: int = 10):
+    """Search OpenCorporates for corporate officers/directors."""
+    if not q.strip():
+        return []
+    try:
+        from clients.opencorporates_client import search_officers  # type: ignore
+        results = search_officers(q.strip(), limit=limit)
+        return [OpenCorpOfficerOut(**r) for r in results]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── UCC ────────────────────────────────────────────────────────────────────────
+
+@app.get("/ucc/filings", response_model=List[UccFilingOut], tags=["ucc"])
+def search_ucc_filings_route(q: str = "", state: Optional[str] = None, limit: int = 10):
+    """Search UCC filings and liens for an entity (aggregates EDGAR + OpenCorporates)."""
+    if not q.strip():
+        return []
+    try:
+        from clients.ucc_client import search_ucc_filings  # type: ignore
+        results = search_ucc_filings(q.strip(), state=state, limit=limit)
+        return [UccFilingOut(**r) for r in results]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── Multi-Source Search ────────────────────────────────────────────────────────
+
+@app.get("/search/multi", response_model=MultiSourceSearchOut, tags=["search"])
+def multi_source_search(q: str = "", sources: Optional[str] = None, limit: int = 5):
+    """
+    Search across multiple data sources simultaneously.
+    sources: comma-separated list of sources to query (fdic,usaspending,opencorporates,ucc,bdc).
+    Defaults to all sources if not specified.
+    """
+    if not q.strip():
+        return MultiSourceSearchOut(query=q, sources_queried=[])
+
+    available = {"fdic", "usaspending", "opencorporates", "ucc", "bdc"}
+    if sources:
+        selected = {s.strip().lower() for s in sources.split(",")} & available
+    else:
+        selected = available
+
+    result = MultiSourceSearchOut(query=q.strip(), sources_queried=sorted(selected))
+
+    # Query each source (sequential for rate limiting)
+    if "fdic" in selected:
+        try:
+            from clients.fdic_client import search_institutions  # type: ignore
+            fdic_data = search_institutions(q.strip(), limit=limit)
+            result.fdic = [FdicInstitutionOut(**r) for r in fdic_data]
+        except Exception as exc:
+            print(f"[multi-search] FDIC failed: {exc}")
+
+    if "usaspending" in selected:
+        try:
+            from clients.usaspending_client import search_awards  # type: ignore
+            usa_data = search_awards(q.strip(), limit=limit)
+            result.usaspending = [UsaSpendingAwardOut(**r) for r in usa_data]
+        except Exception as exc:
+            print(f"[multi-search] USASpending failed: {exc}")
+
+    if "opencorporates" in selected:
+        try:
+            from clients.opencorporates_client import search_companies  # type: ignore
+            oc_data = search_companies(q.strip(), limit=limit)
+            result.opencorporates = [OpenCorpCompanyOut(**r) for r in oc_data]
+        except Exception as exc:
+            print(f"[multi-search] OpenCorporates failed: {exc}")
+
+    if "ucc" in selected:
+        try:
+            from clients.ucc_client import search_ucc_filings  # type: ignore
+            ucc_data = search_ucc_filings(q.strip(), limit=limit)
+            result.ucc = [UccFilingOut(**r) for r in ucc_data]
+        except Exception as exc:
+            print(f"[multi-search] UCC failed: {exc}")
+
+    if "bdc" in selected:
+        try:
+            from bdc_index import search_universe  # type: ignore
+            bdc_data = search_universe(q.strip(), top_k=limit)
+            result.bdc = [
+                CompanySearchResult(
+                    company_name=r.get("company_name", ""),
+                    source_bdc=r.get("source_bdc", ""),
+                    sector=r.get("sector"),
+                    facility_type=r.get("facility_type"),
+                    pricing_spread=r.get("pricing_spread"),
+                    maturity_date=r.get("maturity_date"),
+                    fair_value_usd=r.get("fair_value_usd"),
+                    cost_basis_usd=r.get("cost_basis_usd"),
+                    non_accrual=bool(r.get("non_accrual", False)),
+                    match_confidence=float(r.get("match_confidence", 0.0)),
+                )
+                for r in bdc_data
+            ]
+        except Exception as exc:
+            print(f"[multi-search] BDC failed: {exc}")
+
+    return result
 
 
 # ── Assistant ──────────────────────────────────────────────────────────────────

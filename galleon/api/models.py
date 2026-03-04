@@ -178,6 +178,126 @@ class BdcSummary(BaseModel):
 
 # ── Assistant ─────────────────────────────────────────────────────────────────
 
+# ── FDIC ─────────────────────────────────────────────────────────────────────
+
+class FdicInstitutionOut(BaseModel):
+    name: str
+    cert: str
+    city: Optional[str] = None
+    state: Optional[str] = None
+    total_assets: Optional[float] = None
+    roa: Optional[float] = None
+    equity_capital: Optional[float] = None
+    active: bool = True
+    source: str = "FDIC"
+
+
+class FdicFinancialsOut(BaseModel):
+    report_date: str
+    total_assets: Optional[float] = None
+    net_income: Optional[float] = None
+    roa: Optional[float] = None
+    tier1_capital_ratio: Optional[float] = None
+    equity_capital: Optional[float] = None
+    cert: str
+    source: str = "FDIC"
+
+
+class FdicFailureOut(BaseModel):
+    name: str
+    cert: str
+    city_state: Optional[str] = None
+    state: Optional[str] = None
+    closing_date: Optional[str] = None
+    acquiring_institution: Optional[str] = None
+    source: str = "FDIC"
+
+
+# ── USASpending / SBA ────────────────────────────────────────────────────────
+
+class UsaSpendingAwardOut(BaseModel):
+    award_id: str
+    recipient: str
+    award_amount: Optional[float] = None
+    awarding_agency: Optional[str] = None
+    description: Optional[str] = None
+    start_date: Optional[str] = None
+    award_type: Optional[str] = None
+    cfda_number: Optional[str] = None
+    source: str = "USASpending"
+
+
+class SbaLoanOut(BaseModel):
+    recipient: str
+    award_amount: Optional[float] = None
+    award_date: Optional[str] = None
+    description: Optional[str] = None
+    cfda_program: Optional[str] = None
+    award_id: Optional[str] = None
+    awarding_agency: Optional[str] = None
+    is_sba_program: bool = False
+    source: str = "USASpending-SBA"
+
+
+class RecipientProfileOut(BaseModel):
+    name: str
+    duns: Optional[str] = None
+    uei: Optional[str] = None
+    total_amount: Optional[float] = None
+    award_count: Optional[int] = None
+    source: str = "USASpending"
+
+
+# ── OpenCorporates ───────────────────────────────────────────────────────────
+
+class OpenCorpCompanyOut(BaseModel):
+    name: str
+    company_number: Optional[str] = None
+    jurisdiction: Optional[str] = None
+    status: Optional[str] = None
+    incorporation_date: Optional[str] = None
+    registered_address: Optional[str] = None
+    opencorporates_url: Optional[str] = None
+    source: str = "OpenCorporates"
+
+
+class OpenCorpOfficerOut(BaseModel):
+    name: str
+    company_name: Optional[str] = None
+    position: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    jurisdiction: Optional[str] = None
+    opencorporates_url: Optional[str] = None
+    source: str = "OpenCorporates"
+
+
+# ── UCC ──────────────────────────────────────────────────────────────────────
+
+class UccFilingOut(BaseModel):
+    filing_type: str
+    debtor: Optional[str] = None
+    secured_party: Optional[str] = None
+    filing_date: Optional[str] = None
+    jurisdiction: Optional[str] = None
+    source: str
+    description: Optional[str] = None
+
+
+# ── Multi-Source Search ──────────────────────────────────────────────────────
+
+class MultiSourceSearchOut(BaseModel):
+    query: str
+    fdic: Optional[List[FdicInstitutionOut]] = None
+    usaspending: Optional[List[UsaSpendingAwardOut]] = None
+    opencorporates: Optional[List[OpenCorpCompanyOut]] = None
+    ucc: Optional[List[UccFilingOut]] = None
+    bdc: Optional[List[CompanySearchResult]] = None
+    sources_queried: List[str] = []
+
+
+# ── Assistant ────────────────────────────────────────────────────────────────
+
 class AssistantChatIn(BaseModel):
     message: str
     conversation_id: Optional[str] = None

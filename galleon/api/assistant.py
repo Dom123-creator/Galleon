@@ -34,8 +34,17 @@ _conversations: Dict[str, List[Dict]] = {}  # conversation_id → [messages]
 _SYSTEM_PROMPT_TEMPLATE = """You are Galleon, a private credit data intelligence assistant.
 You help analysts find, extract, and validate financial data for private credit borrowers.
 
+DATA SOURCES AVAILABLE:
+- SEC EDGAR: BDC portfolio companies with loan terms (spread, maturity, fair value)
+- FDIC: Bank institution data, quarterly financials, failed bank records
+- USASpending.gov: Federal contracts, grants, and loan awards
+- SBA: Small Business Administration loan data
+- OpenCorporates: Corporate registry, incorporation status, officers/directors
+- UCC Filings: Liens and security interests (EDGAR + OpenCorporates aggregation)
+
 CAPABILITIES (include a JSON action block when appropriate):
 - search_companies: search BDC portfolio universe by company name
+- search_multi: search across all data sources simultaneously
 - navigate_tab: switch UI tab (dashboard/pipeline/rules/profiles/lineage/conflicts/validation)
 - open_upload: open the document upload dialog
 - show_company: load a specific company profile
@@ -43,17 +52,21 @@ CAPABILITIES (include a JSON action block when appropriate):
 When you want to trigger an action, append this at the END of your response only (never mid-sentence):
 <action>{{"type": "open_upload", "params": {{}}}}</action>
 <action>{{"type": "navigate_tab", "params": {{"tab": "pipeline"}}}}</action>
+<action>{{"type": "search_multi", "params": {{"query": "company name"}}}}</action>
 
 UNIVERSE: {universe_summary}
 ACTIVE COMPANY: {active_company}
 EDGAR CONTEXT:
 {edgar_context}
+MULTI-SOURCE CONTEXT:
+{multi_source_context}
 
 BEHAVIORAL GUIDELINES:
-- On the very first message (greeting): warmly introduce yourself as Galleon, ask what company or deal the analyst is working on today
-- When a company name is mentioned: say you found it (if matched) and present the EDGAR loan terms concisely
-- After showing EDGAR data: always suggest uploading financial documents to extract and verify
-- For companies NOT in the index: "I don't have EDGAR data for [company] yet. Upload their documents and I'll extract from source."
+- On the very first message (greeting): warmly introduce yourself as Galleon, mention you have access to SEC EDGAR, FDIC, USASpending, OpenCorporates, and UCC data, ask what company or deal the analyst is working on today
+- When a company name is mentioned: search across available sources and present findings concisely
+- After showing data: always suggest uploading financial documents to extract and verify
+- For companies NOT in the index: "I don't have EDGAR data for [company] yet, but I can check FDIC, federal awards, and corporate registry. Upload their documents and I'll extract from source."
+- When showing results from multiple sources, attribute each finding (e.g., "per FDIC data", "via USASpending")
 - Keep responses concise (2-4 sentences). Use private credit terminology naturally.
 - Tone: professional, sharp, like a knowledgeable deal analyst colleague
 
@@ -105,10 +118,28 @@ def _build_system_prompt(session_context: dict) -> str:
     else:
         edgar_context = "No specific company data loaded yet"
 
+    # Multi-source context from recent searches
+    multi_source = session_context.get("multi_source_results", {})
+    multi_lines = []
+    if multi_source.get("fdic"):
+        for inst in multi_source["fdic"][:2]:
+            multi_lines.append(f"- FDIC: {inst.get('name', '')} (cert {inst.get('cert', '')}), assets ${inst.get('total_assets', 0):,.0f}k")
+    if multi_source.get("usaspending"):
+        for aw in multi_source["usaspending"][:2]:
+            multi_lines.append(f"- USASpending: {aw.get('recipient', '')} — ${aw.get('award_amount', 0):,.0f} ({aw.get('award_type', '')})")
+    if multi_source.get("opencorporates"):
+        for co in multi_source["opencorporates"][:2]:
+            multi_lines.append(f"- OpenCorporates: {co.get('name', '')} ({co.get('jurisdiction', '')}, {co.get('status', '')})")
+    if multi_source.get("ucc"):
+        for f in multi_source["ucc"][:2]:
+            multi_lines.append(f"- UCC: {f.get('filing_type', '')} — {f.get('debtor', '')} ({f.get('source', '')})")
+    multi_source_context = "\n".join(multi_lines) if multi_lines else "No multi-source data loaded yet"
+
     return _SYSTEM_PROMPT_TEMPLATE.format(
         universe_summary=universe_summary,
         active_company=active_company,
         edgar_context=edgar_context,
+        multi_source_context=multi_source_context,
     )
 
 
@@ -134,6 +165,11 @@ def chat(
     company_matches = _search_companies_from_message(message)
     if company_matches:
         session_context = {**session_context, "company_matches": company_matches}
+
+    # Search multi-source data for enrichment
+    multi_results = _search_multi_sources(message)
+    if multi_results:
+        session_context = {**session_context, "multi_source_results": multi_results}
 
     # Try Anthropic API first
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -236,7 +272,8 @@ def _fallback_response(
     if (is_greeting or msg_lower in ("hi", "hello")) and is_first_message:
         response = (
             "Hi, I'm Galleon — your private credit data intelligence assistant. "
-            "I have EDGAR-indexed loan terms for thousands of BDC portfolio companies. "
+            "I have access to SEC EDGAR loan terms, FDIC bank data, USASpending federal awards, "
+            "OpenCorporates corporate registry, and UCC filing records. "
             "What company or deal are you working on today?"
         )
 
@@ -279,9 +316,10 @@ def _fallback_response(
     elif any(w in msg_lower for w in ["help", "what can", "capabilities", "feature", "how do"]):
         response = (
             "I can: (1) search 10,000+ private credit borrowers from BDC EDGAR filings, "
-            "(2) guide you through document upload and financial extraction, "
-            "(3) verify extracted data against SEC ground truth, "
-            "(4) navigate you to any part of the Galleon platform. "
+            "(2) look up FDIC bank data, USASpending federal awards, and OpenCorporates corporate registry, "
+            "(3) search UCC filings and liens across EDGAR and state records, "
+            "(4) guide you through document upload and financial extraction, "
+            "(5) verify extracted data against SEC ground truth. "
             "Just tell me a company name to get started."
         )
 
@@ -336,6 +374,40 @@ def _search_companies_from_message(message: str) -> List[Dict]:
     except Exception as exc:
         print(f"[assistant] Company search error: {exc}")
         return []
+
+
+def _search_multi_sources(message: str) -> Dict:
+    """Search FDIC, OpenCorporates, etc. for entity mentions. Best-effort, silent on failure."""
+    msg = message.strip()
+    if len(msg) < 3:
+        return {}
+
+    # Skip greetings and short commands
+    skip_words = {"hi", "hello", "hey", "help", "upload", "pipeline", "validation"}
+    if msg.lower() in skip_words:
+        return {}
+
+    results: Dict = {}
+
+    # FDIC — only for bank-like queries
+    try:
+        from clients.fdic_client import search_institutions  # type: ignore
+        fdic = search_institutions(msg, limit=3)
+        if fdic:
+            results["fdic"] = fdic
+    except Exception:
+        pass
+
+    # OpenCorporates — general corporate lookup
+    try:
+        from clients.opencorporates_client import search_companies  # type: ignore
+        oc = search_companies(msg, limit=3)
+        if oc:
+            results["opencorporates"] = oc
+    except Exception:
+        pass
+
+    return results
 
 
 def _index_has_data() -> bool:
