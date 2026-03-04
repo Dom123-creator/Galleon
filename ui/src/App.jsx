@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 
 // ─── API Layer ────────────────────────────────────────────────────────────────
-const API_BASE = window.location.port !== "8000" ? "http://localhost:8000" : "";
+const API_BASE = (() => {
+  const port = window.location.port;
+  // In production (Render, Docker): same origin, no prefix needed
+  if (!port || port === "8000") return "";
+  // Local dev: Vite runs on 5173+ while backend is on 8000
+  return "http://localhost:8000";
+})();
 
 async function apiFetch(path, opts = {}) {
   try {
