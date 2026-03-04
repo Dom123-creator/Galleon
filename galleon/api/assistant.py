@@ -27,8 +27,19 @@ _HERE = Path(__file__).parent
 _GALLEON_ROOT = _HERE.parent
 sys.path.insert(0, str(_GALLEON_ROOT))
 
-# ── Conversation store (in-memory) ────────────────────────────────────────────
+# ── Conversation store (in-memory, backed by SQLite) ─────────────────────────
 _conversations: Dict[str, List[Dict]] = {}  # conversation_id → [messages]
+
+# Try loading persisted conversations from SQLite
+try:
+    from api.sqlite_store import load_conversations as _db_load_convos, append_message as _db_append_msg
+    _saved = _db_load_convos()
+    if _saved:
+        _conversations.update(_saved)
+        print(f"[assistant] Loaded {len(_saved)} conversations from SQLite")
+    _HAS_SQLITE = True
+except Exception:
+    _HAS_SQLITE = False
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 _SYSTEM_PROMPT_TEMPLATE = """You are Galleon, a private credit data intelligence assistant.
@@ -199,6 +210,11 @@ def _claude_chat(
 
     # Append user message
     history.append({"role": "user", "content": message})
+    if _HAS_SQLITE:
+        try:
+            _db_append_msg(conversation_id, "user", message)
+        except Exception:
+            pass
 
     system_prompt = _build_system_prompt(session_context)
 
@@ -216,6 +232,11 @@ def _claude_chat(
 
     # Persist assistant turn (without raw action tag)
     history.append({"role": "assistant", "content": clean_text})
+    if _HAS_SQLITE:
+        try:
+            _db_append_msg(conversation_id, "assistant", clean_text)
+        except Exception:
+            pass
 
     # If company matches found but no explicit action, suggest upload
     if company_matches and not action:
@@ -258,6 +279,11 @@ def _fallback_response(
     msg_lower = message.lower().strip()
     history = _conversations[conversation_id]
     history.append({"role": "user", "content": message})
+    if _HAS_SQLITE:
+        try:
+            _db_append_msg(conversation_id, "user", message)
+        except Exception:
+            pass
 
     action: Optional[str] = None
     action_params: dict = {}
@@ -350,6 +376,11 @@ def _fallback_response(
         action_params = {"company_name": message}
 
     history.append({"role": "assistant", "content": response})
+    if _HAS_SQLITE:
+        try:
+            _db_append_msg(conversation_id, "assistant", response)
+        except Exception:
+            pass
 
     return {
         "response":        response,

@@ -342,7 +342,16 @@ def _get_extra_arcc_companies(bdc_name: str) -> List[Dict]:
 # ── Persistence ──────────────────────────────────────────────────────────────
 
 def save_index() -> None:
-    """Serialize _flat_index and metadata to JSON cache file."""
+    """Save _flat_index to SQLite (primary) and JSON (fallback)."""
+    # SQLite primary
+    try:
+        from api.sqlite_store import save_bdc_index
+        save_bdc_index(_flat_index, _last_indexed.isoformat() if _last_indexed else None)
+        print(f"[bdc_index] Index saved to SQLite ({len(_flat_index)} companies)")
+    except Exception as exc:
+        print(f"[bdc_index] SQLite save failed: {exc}")
+
+    # JSON fallback
     import json
     try:
         INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -352,16 +361,34 @@ def save_index() -> None:
             "last_indexed": _last_indexed.isoformat() if _last_indexed else None,
         }
         INDEX_FILE.write_text(json.dumps(payload, default=str), encoding="utf-8")
-        print(f"[bdc_index] Index saved to {INDEX_FILE} ({len(_flat_index)} companies)")
-    except Exception as exc:
-        print(f"[bdc_index] Failed to save index: {exc}")
+    except Exception:
+        pass
 
 
 def load_index() -> bool:
-    """Load index from JSON cache. Returns True if loaded successfully."""
+    """Load index from SQLite (primary), then JSON (fallback). Returns True if loaded."""
     import json
     global _universe, _flat_index, _last_indexed
 
+    # Try SQLite first
+    try:
+        from api.sqlite_store import load_bdc_index, load_bdc_last_indexed
+        flat = load_bdc_index()
+        if flat:
+            _flat_index = flat
+            ts = load_bdc_last_indexed()
+            _last_indexed = datetime.fromisoformat(ts) if ts else datetime.utcnow()
+            new_universe: Dict[str, List[Dict]] = {}
+            for co in _flat_index:
+                ticker = co.get("source_bdc", "UNKNOWN")
+                new_universe.setdefault(ticker, []).append(co)
+            _universe = new_universe
+            print(f"[bdc_index] Index loaded from SQLite: {len(_universe)} BDCs, {len(_flat_index)} companies")
+            return True
+    except Exception as exc:
+        print(f"[bdc_index] SQLite load failed: {exc}")
+
+    # JSON fallback
     if not INDEX_FILE.exists():
         return False
     try:
@@ -373,14 +400,21 @@ def load_index() -> bool:
         _flat_index = flat
         _last_indexed = datetime.fromisoformat(data["last_indexed"]) if data.get("last_indexed") else datetime.utcnow()
 
-        # Rebuild _universe from flat_index grouped by source_bdc
-        new_universe: Dict[str, List[Dict]] = {}
+        new_universe2: Dict[str, List[Dict]] = {}
         for co in _flat_index:
             ticker = co.get("source_bdc", "UNKNOWN")
-            new_universe.setdefault(ticker, []).append(co)
-        _universe = new_universe
+            new_universe2.setdefault(ticker, []).append(co)
+        _universe = new_universe2
 
-        print(f"[bdc_index] Index loaded from cache: {len(_universe)} BDCs, {len(_flat_index)} companies")
+        print(f"[bdc_index] Index loaded from JSON cache: {len(_universe)} BDCs, {len(_flat_index)} companies")
+
+        # Migrate JSON data into SQLite for next time
+        try:
+            from api.sqlite_store import save_bdc_index
+            save_bdc_index(_flat_index, _last_indexed.isoformat() if _last_indexed else None)
+        except Exception:
+            pass
+
         return True
     except Exception as exc:
         print(f"[bdc_index] Failed to load index cache: {exc}")

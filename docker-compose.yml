@@ -1,0 +1,14 @@
+services:
+  galleon:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - EDGAR_USER_AGENT=${EDGAR_USER_AGENT:-Galleon Research contact@galleon.io}
+    volumes:
+      - galleon-data:/app/galleon/data
+    restart: unless-stopped
+
+volumes:
+  galleon-data:

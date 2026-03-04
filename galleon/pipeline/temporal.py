@@ -17,6 +17,17 @@ from typing import Dict, List, Optional
 _snapshots: Dict[str, List[Dict]] = {}  # normalized_name -> time-ordered snapshots
 _build_status: Dict[str, str] = {}  # bdc_ticker -> "building"|"complete"|"failed"
 
+# Try loading persisted snapshots from SQLite
+try:
+    from api.sqlite_store import load_snapshots as _db_load_snapshots, save_snapshots_bulk as _db_save_snapshots
+    _saved = _db_load_snapshots()
+    if _saved:
+        _snapshots.update(_saved)
+        print(f"[temporal] Loaded {len(_saved)} company timelines from SQLite")
+    _HAS_SQLITE = True
+except Exception:
+    _HAS_SQLITE = False
+
 
 def _normalize_name(name: str) -> str:
     """Normalize company name for matching across periods."""
@@ -90,6 +101,11 @@ def build_temporal_index(cik: str, bdc_name: str, max_quarters: int = 8) -> int:
             _snapshots[norm].sort(key=lambda s: s.get("period", ""))
 
         _build_status[bdc_name] = "complete"
+        if _HAS_SQLITE:
+            try:
+                _db_save_snapshots(_snapshots)
+            except Exception:
+                pass
         return count
 
     except Exception as exc:
@@ -163,6 +179,12 @@ def _build_synthetic_temporal(bdc_name: str, max_quarters: int = 8) -> int:
     # Sort
     for norm in _snapshots:
         _snapshots[norm].sort(key=lambda s: s.get("period", ""))
+
+    if _HAS_SQLITE:
+        try:
+            _db_save_snapshots(_snapshots)
+        except Exception:
+            pass
 
     return count
 

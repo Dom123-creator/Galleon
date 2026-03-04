@@ -20,6 +20,28 @@ import requests
 # ── Module-level state ────────────────────────────────────────────────────────
 _alerts: List[Dict] = []
 _known_filings: Dict[str, str] = {}  # cik -> last known accession number
+
+# Try loading persisted state from SQLite
+try:
+    from api.sqlite_store import (
+        load_alerts as _db_load_alerts,
+        save_alert as _db_save_alert,
+        update_alert_read as _db_update_alert_read,
+        mark_all_alerts_read as _db_mark_all_alerts_read,
+        load_known_filings as _db_load_known_filings,
+        save_known_filing as _db_save_known_filing,
+    )
+    _saved_alerts = _db_load_alerts()
+    if _saved_alerts:
+        _alerts.extend(_saved_alerts)
+        print(f"[edgar_monitor] Loaded {len(_saved_alerts)} alerts from SQLite")
+    _saved_filings = _db_load_known_filings()
+    if _saved_filings:
+        _known_filings.update(_saved_filings)
+        print(f"[edgar_monitor] Loaded {len(_saved_filings)} known filings from SQLite")
+    _HAS_SQLITE = True
+except Exception:
+    _HAS_SQLITE = False
 _monitor_thread: Optional[threading.Thread] = None
 _running = False
 _last_poll: Optional[str] = None
@@ -102,6 +124,11 @@ def _poll_edgar_filings() -> None:
                     break  # Already seen this one
 
                 _known_filings[cik] = acc
+                if _HAS_SQLITE:
+                    try:
+                        _db_save_known_filing(cik, acc)
+                    except Exception:
+                        pass
 
                 if known is not None:
                     # This is a genuinely new filing
@@ -130,6 +157,11 @@ def _on_new_filing(bdc: str, cik: str, filing_info: Dict) -> None:
         "created_at": datetime.utcnow().isoformat() + "Z",
     }
     _alerts.insert(0, alert)
+    if _HAS_SQLITE:
+        try:
+            _db_save_alert(alert)
+        except Exception:
+            pass
     print(f"[edgar_monitor] New filing alert: {alert['message']}")
 
     # Try to diff against previous data
@@ -234,6 +266,10 @@ def _diff_filings(bdc: str, old_companies: List[Dict], new_companies: List[Dict]
 
 def _generate_seed_alerts() -> None:
     """Generate realistic seed alerts from current BDC index data for demo."""
+    # Skip seeding if alerts were already loaded from SQLite
+    if _alerts:
+        return
+
     try:
         from bdc_index import _flat_index
     except ImportError:
@@ -295,6 +331,14 @@ def _generate_seed_alerts() -> None:
         "created_at": now,
     })
 
+    # Persist seed alerts to SQLite
+    if _HAS_SQLITE:
+        try:
+            for a in _alerts:
+                _db_save_alert(a)
+        except Exception:
+            pass
+
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
@@ -311,6 +355,11 @@ def mark_alert_read(alert_id: str) -> bool:
     for alert in _alerts:
         if alert["id"] == alert_id:
             alert["read"] = True
+            if _HAS_SQLITE:
+                try:
+                    _db_update_alert_read(alert_id, True)
+                except Exception:
+                    pass
             return True
     return False
 
@@ -322,6 +371,11 @@ def mark_all_read() -> int:
         if not alert.get("read"):
             alert["read"] = True
             count += 1
+    if _HAS_SQLITE and count:
+        try:
+            _db_mark_all_alerts_read()
+        except Exception:
+            pass
     return count
 
 

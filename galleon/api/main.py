@@ -24,6 +24,7 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
+from . import sqlite_store
 from .models import (
     AssistantChatIn,
     AssistantChatOut,
@@ -117,6 +118,21 @@ def startup_event():
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     connected = db.is_connected()
     print(f"[galleon] API v{VERSION} starting — DB connected: {connected}")
+
+    # Initialize SQLite persistence
+    try:
+        sqlite_store.init_db()
+        # Load persisted pipelines and deal reviews
+        saved_pipelines = sqlite_store.load_pipelines()
+        if saved_pipelines:
+            _pipelines.update(saved_pipelines)
+            print(f"[galleon] Loaded {len(saved_pipelines)} pipelines from SQLite")
+        saved_reviews = sqlite_store.load_deal_reviews()
+        if saved_reviews:
+            _deal_reviews.update(saved_reviews)
+            print(f"[galleon] Loaded {len(saved_reviews)} deal reviews from SQLite")
+    except Exception as exc:
+        print(f"[galleon] SQLite init failed (non-fatal): {exc}")
 
     # Try loading cached BDC index first, then build if stale
     try:
@@ -1797,6 +1813,10 @@ def create_deal_review(body: DealReviewCreate):
         "updated_at": now,
     }
     _deal_reviews[review["id"]] = review
+    try:
+        sqlite_store.save_deal_review(review)
+    except Exception:
+        pass
     return DealReview(**review)
 
 
@@ -1815,6 +1835,10 @@ def update_deal_review(review_id: str, body: DealReviewUpdate):
     if body.priority is not None:
         review["priority"] = body.priority
     review["updated_at"] = datetime.utcnow().isoformat() + "Z"
+    try:
+        sqlite_store.save_deal_review(review)
+    except Exception:
+        pass
     return DealReview(**review)
 
 
@@ -1882,6 +1906,9 @@ def get_concentration():
 
 def _seed_deal_reviews() -> None:
     """Seed some initial deal reviews from BDC index for demo."""
+    # Skip seeding if reviews were already loaded from SQLite
+    if _deal_reviews:
+        return
     flat = _get_bdc_flat_index()
     if not flat:
         return
