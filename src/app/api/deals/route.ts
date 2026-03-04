@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getAuthUserId as auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { dealCreateSchema, dealFilterSchema } from "@/lib/validations";
 import { generateSlug } from "@/lib/utils";

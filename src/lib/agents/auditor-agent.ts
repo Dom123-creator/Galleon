@@ -81,34 +81,6 @@ export async function executeAuditTask(
             context
           );
 
-          // Handle confidence updates
-          if (block.name === "update_confidence" && !result.is_error) {
-            const input = block.input as Record<string, unknown>;
-            await db.finding.update({
-              where: { id: input.finding_id as string },
-              data: {
-                confidence: input.new_confidence as "HIGH" | "MEDIUM" | "LOW" | "UNVERIFIED",
-                auditNotes: input.audit_notes as string,
-                verifiedBy: "AUDITOR",
-                verifiedAt: new Date(),
-              },
-            });
-          }
-
-          // Handle risk flags
-          if (block.name === "flag_risk" && !result.is_error) {
-            const input = block.input as Record<string, unknown>;
-            if (input.finding_id) {
-              await db.finding.update({
-                where: { id: input.finding_id as string },
-                data: {
-                  isFlagged: true,
-                  flagReason: input.risk_description as string,
-                },
-              });
-            }
-          }
-
           toolResults.push({
             type: "tool_result",
             tool_use_id: block.id,

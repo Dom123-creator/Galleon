@@ -1,9 +1,46 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import type { User } from "@prisma/client";
 
+const DEV_MODE =
+  !process.env.CLERK_SECRET_KEY ||
+  process.env.CLERK_SECRET_KEY === "sk_test_placeholder";
+
+const DEV_CLERK_ID = "dev_user_001";
+
+// Dev-compatible replacement for Clerk's auth() — returns { userId } for API routes
+export async function getAuthUserId(): Promise<{ userId: string | null }> {
+  if (DEV_MODE) {
+    return { userId: DEV_CLERK_ID };
+  }
+  const { auth } = await import("@clerk/nextjs/server");
+  return auth();
+}
+
+// Dev user fallback when Clerk keys are placeholders
+async function getOrCreateDevUser(): Promise<User> {
+  const devClerkId = "dev_user_001";
+  let user = await db.user.findUnique({ where: { clerkId: devClerkId } });
+  if (!user) {
+    user = await db.user.create({
+      data: {
+        clerkId: devClerkId,
+        email: "dev@galleon.local",
+        name: "Dev User",
+        role: "ADMIN",
+        subscriptionTier: "ENTERPRISE",
+      },
+    });
+  }
+  return user;
+}
+
 // Get current authenticated user from Clerk and sync with database
 export async function getCurrentUser(): Promise<User | null> {
+  if (DEV_MODE) {
+    return getOrCreateDevUser();
+  }
+
+  const { auth, currentUser } = await import("@clerk/nextjs/server");
   const { userId } = await auth();
 
   if (!userId) {
@@ -36,6 +73,12 @@ export async function getCurrentUser(): Promise<User | null> {
 
 // Get current user with subscription details
 export async function getCurrentUserWithSubscription() {
+  if (DEV_MODE) {
+    const user = await getOrCreateDevUser();
+    return { ...user, subscription: null };
+  }
+
+  const { auth } = await import("@clerk/nextjs/server");
   const { userId } = await auth();
 
   if (!userId) {

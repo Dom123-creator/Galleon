@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getAuthUserId as auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { documentUploadSchema } from "@/lib/validations";
 import { generateUploadUrl, generateFileName, validateFile, FileType } from "@/lib/s3";
