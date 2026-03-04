@@ -1257,15 +1257,16 @@ export default function App() {
   };
 
   // ── Rules ──────────────────────────────────────────────────────────────────
+  // Compute rule type summary (must be at top level, not inside renderRules)
+  const ruleTypeCounts = useMemo(() => {
+    const counts = {};
+    uiRules.forEach(r => { counts[r.type] = (counts[r.type] || 0) + 1; });
+    const labelMap = { regex:"Regex / Format", derived:"Derived Fields", covenant:"Covenant Checks", unit:"Unit Normalize", logical:"Logical Sanity", numeric:"Numeric Norm", lookup:"Lookup", date:"Date Parse" };
+    const colorMap = { regex:T.blue, derived:T.green, covenant:T.amber, unit:T.gold, logical:T.purple, numeric:T.blue, lookup:T.purple, date:T.green };
+    return Object.entries(counts).map(([type, n]) => ({ n, l: labelMap[type] || type, c: colorMap[type] || T.muted }));
+  }, [uiRules]);
+
   const renderRules = () => {
-    // Compute rule type summary from actual data
-    const ruleTypeCounts = useMemo(() => {
-      const counts = {};
-      uiRules.forEach(r => { counts[r.type] = (counts[r.type] || 0) + 1; });
-      const labelMap = { regex:"Regex / Format", derived:"Derived Fields", covenant:"Covenant Checks", unit:"Unit Normalize", logical:"Logical Sanity", numeric:"Numeric Norm", lookup:"Lookup", date:"Date Parse" };
-      const colorMap = { regex:T.blue, derived:T.green, covenant:T.amber, unit:T.gold, logical:T.purple, numeric:T.blue, lookup:T.purple, date:T.green };
-      return Object.entries(counts).map(([type, n]) => ({ n, l: labelMap[type] || type, c: colorMap[type] || T.muted }));
-    }, [uiRules]);
 
     return (
     <div>
