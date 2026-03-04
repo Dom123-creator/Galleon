@@ -1,6 +1,7 @@
-import { auth } from "@clerk/nextjs/server";
+import { getAuthUserId as auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { SSEStream, createSSEResponse } from "@/lib/sse";
+import { SSEStream, createSSEResponse, agentEventToSSE } from "@/lib/sse";
+import { subscribe } from "@/lib/mission-events";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth();
@@ -28,19 +29,53 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     timestamp: new Date().toISOString(),
   });
 
-  // Send heartbeat every 30 seconds
+  // If mission already terminal, send status and close
+  if (["COMPLETED", "FAILED", "CANCELED"].includes(mission.status)) {
+    stream.send("mission_status", {
+      status: mission.status,
+      completedAt: mission.completedAt?.toISOString(),
+    });
+    stream.close();
+    return createSSEResponse(stream);
+  }
+
+  // Subscribe to real-time events from the event bus
+  const unsubscribe = subscribe(id, (event) => {
+    if (stream.isClosed) {
+      unsubscribe();
+      return;
+    }
+
+    const sse = agentEventToSSE(event);
+    stream.send(sse.type, sse.data);
+
+    // Auto-close on terminal mission status
+    if (event.type === "mission_status") {
+      const status = event.data?.status as string;
+      if (["COMPLETED", "FAILED", "CANCELED"].includes(status)) {
+        clearInterval(heartbeatInterval);
+        clearInterval(fallbackPoll);
+        stream.close();
+        unsubscribe();
+      }
+    }
+  });
+
+  // Heartbeat every 30 seconds
   const heartbeatInterval = setInterval(() => {
     if (stream.isClosed) {
       clearInterval(heartbeatInterval);
+      clearInterval(fallbackPoll);
+      unsubscribe();
       return;
     }
     stream.send("heartbeat", { timestamp: new Date().toISOString() });
   }, 30000);
 
-  // Poll for mission updates
-  const pollInterval = setInterval(async () => {
+  // Fallback poll every 10s in case event bus misses terminal state
+  const fallbackPoll = setInterval(async () => {
     if (stream.isClosed) {
-      clearInterval(pollInterval);
+      clearInterval(fallbackPoll);
       return;
     }
 
@@ -50,19 +85,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         select: { status: true, completedAt: true },
       });
 
-      if (currentMission && (currentMission.status === "COMPLETED" || currentMission.status === "FAILED" || currentMission.status === "CANCELED")) {
+      if (currentMission && ["COMPLETED", "FAILED", "CANCELED"].includes(currentMission.status)) {
         stream.send("mission_status", {
           status: currentMission.status,
           completedAt: currentMission.completedAt?.toISOString(),
         });
-        clearInterval(pollInterval);
+        clearInterval(fallbackPoll);
         clearInterval(heartbeatInterval);
         stream.close();
+        unsubscribe();
       }
     } catch {
       // Ignore polling errors
     }
-  }, 2000);
+  }, 10000);
 
   return createSSEResponse(stream);
 }

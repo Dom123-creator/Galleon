@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getAuthUserId as auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { hasAgentAccess } from "@/lib/auth";
 import { executeMission } from "@/lib/agents/master-agent";
+import { emit } from "@/lib/mission-events";
 
 // Store active mission abort controllers
 const activeMissions = new Map<string, AbortController>();
@@ -40,8 +41,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const controller = new AbortController();
     activeMissions.set(id, controller);
 
+    // Pass onEvent callback that emits to event bus
+    const onEvent = (event: Parameters<typeof emit>[1]) => emit(id, event);
+
     // Start mission execution in background
-    executeMission(id, controller.signal).finally(() => {
+    executeMission(id, controller.signal, onEvent).finally(() => {
       activeMissions.delete(id);
     });
 
