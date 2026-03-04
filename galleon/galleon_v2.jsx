@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 
 // ─── API Layer ────────────────────────────────────────────────────────────────
-const API_BASE = window.location.port === "5173" ? "http://localhost:8000" : "";
+const API_BASE = window.location.port !== "8000" ? "http://localhost:8000" : "";
 
 async function apiFetch(path, opts = {}) {
   try {
