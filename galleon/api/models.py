@@ -13,6 +13,9 @@ from pydantic import BaseModel
 class HealthOut(BaseModel):
     status: str
     db_connected: bool
+    sqlite_ok: bool = False
+    bdc_index_companies: int = 0
+    monitor_running: bool = False
     version: str
     timestamp: str
 

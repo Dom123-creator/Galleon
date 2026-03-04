@@ -149,6 +149,10 @@ def startup_event():
                 "type": "bdc_index",
                 "started_at": datetime.utcnow().isoformat(),
             }
+            try:
+                sqlite_store.save_pipeline(_pipelines[pipeline_id])
+            except Exception:
+                pass
             t = threading.Thread(
                 target=_run_bdc_index_background,
                 kwargs={"pipeline_id": pipeline_id},
@@ -427,9 +431,36 @@ def debug_pipelines():
 
 @app.get("/health", response_model=HealthOut, tags=["health"])
 def health():
+    # Check SQLite
+    sqlite_ok = False
+    try:
+        sqlite_store._get_conn().execute("SELECT 1").fetchone()
+        sqlite_ok = True
+    except Exception:
+        pass
+
+    # Check BDC index size
+    bdc_count = 0
+    try:
+        from bdc_index import _flat_index
+        bdc_count = len(_flat_index)
+    except Exception:
+        pass
+
+    # Check EDGAR monitor
+    monitor_running = False
+    try:
+        from pipeline.edgar_monitor import _running
+        monitor_running = _running
+    except Exception:
+        pass
+
     return HealthOut(
         status="ok",
         db_connected=db.is_connected(),
+        sqlite_ok=sqlite_ok,
+        bdc_index_companies=bdc_count,
+        monitor_running=monitor_running,
         version=VERSION,
         timestamp=datetime.utcnow().isoformat() + "Z",
     )
@@ -717,6 +748,10 @@ async def upload_document(
         "pdf_path": str(dest),
         "started_at": datetime.utcnow().isoformat(),
     }
+    try:
+        sqlite_store.save_pipeline(_pipelines[pipeline_id])
+    except Exception:
+        pass
 
     background_tasks.add_task(
         _run_extraction_background,
@@ -790,6 +825,10 @@ def run_pipeline(
         "document_ids": document_ids,
         "started_at": datetime.utcnow().isoformat(),
     }
+    try:
+        sqlite_store.save_pipeline(_pipelines[pipeline_id])
+    except Exception:
+        pass
 
     # For now we only handle single-document runs via PDF path
     # Multi-document orchestration is a future step
@@ -866,6 +905,10 @@ def edgar_pull(background_tasks: BackgroundTasks, live: bool = False):
         "type": "edgar_pull",
         "started_at": datetime.utcnow().isoformat(),
     }
+    try:
+        sqlite_store.save_pipeline(_pipelines[pipeline_id])
+    except Exception:
+        pass
     background_tasks.add_task(_run_edgar_background, pipeline_id=pipeline_id, live=live)
     return {"pipeline_id": pipeline_id, "status": "running"}
 
@@ -1090,6 +1133,10 @@ def trigger_bdc_index(background_tasks: BackgroundTasks, max_bdcs: int = 25):
         "type": "bdc_index",
         "started_at": datetime.utcnow().isoformat(),
     }
+    try:
+        sqlite_store.save_pipeline(_pipelines[pipeline_id])
+    except Exception:
+        pass
     background_tasks.add_task(_run_bdc_index_background, pipeline_id=pipeline_id, max_bdcs=max_bdcs)
     return {"pipeline_id": pipeline_id, "status": "running"}
 
@@ -1388,6 +1435,10 @@ def _run_extraction_background(
                 "completed_at": datetime.utcnow().isoformat(),
             }
         )
+        try:
+            sqlite_store.save_pipeline(_pipelines[pipeline_id])
+        except Exception:
+            pass
     except Exception as exc:
         print(f"[pipeline] Extraction failed for {pipeline_id}: {exc}")
         db.finish_pipeline(pipeline_id, {}, success=False)
@@ -1395,6 +1446,10 @@ def _run_extraction_background(
         _pipelines[pipeline_id].update(
             {"status": "failed", "error": str(exc), "completed_at": datetime.utcnow().isoformat()}
         )
+        try:
+            sqlite_store.save_pipeline(_pipelines[pipeline_id])
+        except Exception:
+            pass
 
 
 def _run_bdc_index_background(pipeline_id: str, max_bdcs: int = 25) -> None:
@@ -1406,6 +1461,10 @@ def _run_bdc_index_background(pipeline_id: str, max_bdcs: int = 25) -> None:
             "status": "complete",
             "completed_at": datetime.utcnow().isoformat(),
         })
+        try:
+            sqlite_store.save_pipeline(_pipelines[pipeline_id])
+        except Exception:
+            pass
     except Exception as exc:
         print(f"[bdc_index] Build failed for {pipeline_id}: {exc}")
         _pipelines[pipeline_id].update({
@@ -1413,6 +1472,10 @@ def _run_bdc_index_background(pipeline_id: str, max_bdcs: int = 25) -> None:
             "error": str(exc),
             "completed_at": datetime.utcnow().isoformat(),
         })
+        try:
+            sqlite_store.save_pipeline(_pipelines[pipeline_id])
+        except Exception:
+            pass
 
 
 def _run_edgar_background(pipeline_id: str, live: bool) -> None:
@@ -1437,11 +1500,19 @@ def _run_edgar_background(pipeline_id: str, live: bool) -> None:
                 "completed_at": datetime.utcnow().isoformat(),
             }
         )
+        try:
+            sqlite_store.save_pipeline(_pipelines[pipeline_id])
+        except Exception:
+            pass
     except Exception as exc:
         print(f"[edgar] Pull failed for {pipeline_id}: {exc}")
         _pipelines[pipeline_id].update(
             {"status": "failed", "error": str(exc), "completed_at": datetime.utcnow().isoformat()}
         )
+        try:
+            sqlite_store.save_pipeline(_pipelines[pipeline_id])
+        except Exception:
+            pass
 
 
 # ── Entity resolution helper ──────────────────────────────────────────────────

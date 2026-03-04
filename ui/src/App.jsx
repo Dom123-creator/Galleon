@@ -582,6 +582,46 @@ function GalleonAssistant({ onNavigate, onUpload, onSelectCompany }) {
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
+// ─── Error Boundary ──────────────────────────────────────────────────────────
+export class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error("[Galleon] Uncaught error:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          padding: 40, textAlign: "center", fontFamily: "system-ui",
+          color: "#334155", maxWidth: 500, margin: "80px auto"
+        }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>&#9888;</div>
+          <h2 style={{ margin: "0 0 8px" }}>Something went wrong</h2>
+          <p style={{ color: "#64748b", fontSize: 14, marginBottom: 20 }}>
+            {this.state.error?.message || "An unexpected error occurred."}
+          </p>
+          <button
+            onClick={() => { this.setState({ hasError: false, error: null }); }}
+            style={{
+              padding: "8px 20px", borderRadius: 6, border: "1px solid #cbd5e1",
+              background: "#f8fafc", cursor: "pointer", fontSize: 14
+            }}
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   // ── Existing UI state ────────────────────────────────────────────────────────
   const [tab, setTab]             = useState("dashboard");
