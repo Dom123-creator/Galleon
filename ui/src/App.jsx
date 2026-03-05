@@ -656,6 +656,7 @@ export default function App() {
   const [activePipeline,    setActivePipeline]    = useState(null);
   const [livePipelineSteps, setLivePipelineSteps] = useState([]);
   const [livePipelineResult,setLivePipelineResult]= useState(null);
+  const [extractedFields,   setExtractedFields]   = useState([]);
 
   // ── Research tab state ──────────────────────────────────────────────────────
   const [researchQuery,   setResearchQuery]   = useState("");
@@ -752,6 +753,21 @@ export default function App() {
     apiFetch("/monitor/status").then(d => { if (d) setMonitorStatus(d); });
     apiFetch("/workflow/reviews").then(d => { if (d) setDealReviews(d); });
     apiFetch("/workflow/exposure").then(d => { if (d) setExposure(d); });
+    // Load extracted fields from most recent completed pipeline
+    apiFetch("/debug/pipelines").then(d => {
+      if (!d) return;
+      const entries = Object.entries(d);
+      const completed = entries.find(([, v]) => v.status === "complete" && v.company_id);
+      if (completed) {
+        const [pid, pdata] = completed;
+        setActivePipeline(pid);
+        setUploadStatus("complete");
+        setLivePipelineResult({ status:"complete", fields_extracted: pdata.best_values_count, company_id: pdata.company_id });
+        apiFetch(`/companies/${pdata.company_id}/fields`).then(fields => {
+          if (fields && Array.isArray(fields)) setExtractedFields(fields);
+        });
+      }
+    });
   };
   useEffect(() => { refreshAll(); }, []);
 
@@ -823,6 +839,12 @@ export default function App() {
           addToast(status.status === "complete" ? "Upload extraction complete" : "Upload extraction failed", status.status === "complete" ? "success" : "error");
           apiFetch("/companies").then(d => { if (d) setApiCompanies(d); });
           apiFetch("/documents").then(d => { if (d) setApiDocuments(d); });
+          // Fetch extracted fields
+          if (status.status === "complete" && status.company_id) {
+            apiFetch(`/companies/${status.company_id}/fields`).then(d => {
+              if (d && Array.isArray(d)) setExtractedFields(d);
+            });
+          }
         }
       }
     }, 2000);
@@ -948,6 +970,7 @@ export default function App() {
     setUploadStatus("uploading");
     setLivePipelineSteps([]);
     setLivePipelineResult(null);
+    setExtractedFields([]);
     const fd = new FormData();
     fd.append("file", uploadFile);
     fd.append("company_name", uploadCompanyName.trim() || uploadFile.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
@@ -1341,6 +1364,87 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* ── Extracted Fields Table ── */}
+        {extractedFields.length > 0 && (
+          <div style={{ ...S.card, marginTop:20 }}>
+            <div style={S.secTitle}>Extracted Fields — {extractedFields.length} fields from {uploadFile?.name || "uploaded document"}</div>
+            {/* Category summary chips */}
+            <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
+              {Object.entries(extractedFields.reduce((acc, f) => {
+                const cat = f.field_category || "other";
+                acc[cat] = (acc[cat] || 0) + 1;
+                return acc;
+              }, {})).sort((a,b) => b[1] - a[1]).map(([cat, count]) => {
+                const catColors = { identity:T.blue, deal:T.gold, financial:T.green, operational:T.amber, derived:T.purple, other:T.muted };
+                return (
+                  <div key={cat} style={{ background:T.navy3, border:`1px solid ${(catColors[cat]||T.muted)}33`, borderRadius:5, padding:"6px 14px", fontSize:10, fontFamily:"'DM Mono', monospace" }}>
+                    <span style={{ color:catColors[cat]||T.muted, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>{cat}</span>
+                    <span style={{ color:T.cream, marginLeft:6, fontWeight:700, fontSize:13 }}>{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Fields table */}
+            <div style={{ maxHeight:500, overflowY:"auto" }}>
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:11 }}>
+                <thead><tr>
+                  {["Field","Category","Value","Confidence","Source","Page"].map(h =>
+                    <th key={h} style={{ ...S.th, position:"sticky", top:0, background:T.navy2, zIndex:1 }}>{h}</th>
+                  )}
+                </tr></thead>
+                <tbody>
+                  {extractedFields
+                    .sort((a,b) => (a.field_category||"").localeCompare(b.field_category||"") || (a.field_name||"").localeCompare(b.field_name||""))
+                    .map((f, i) => {
+                    const catColors = { identity:T.blue, deal:T.gold, financial:T.green, operational:T.amber, derived:T.purple, other:T.muted };
+                    const conf = f.confidence_score || 0;
+                    const confColor = conf >= 0.95 ? T.green : conf >= 0.85 ? T.gold : conf >= 0.7 ? T.amber : T.red;
+                    return (
+                      <tr key={f.id || i} style={{ borderBottom:`1px solid ${T.border}` }}>
+                        <td style={{ ...S.td, color:T.cream, fontFamily:"'DM Mono', monospace", fontWeight:600, maxWidth:180 }}>
+                          {(f.field_name||"").replace(/_/g, " ")}
+                        </td>
+                        <td style={S.td}>
+                          <span style={{ fontSize:9, color:catColors[f.field_category]||T.muted, fontFamily:"'DM Mono', monospace", textTransform:"uppercase", letterSpacing:"0.06em", background:`${catColors[f.field_category]||T.muted}18`, padding:"2px 6px", borderRadius:3 }}>
+                            {f.field_category || "—"}
+                          </span>
+                        </td>
+                        <td style={{ ...S.td, maxWidth:260 }}>
+                          <div style={{ color:T.cream, fontWeight:600, fontSize:12 }}>
+                            {f.normalized_value || f.raw_value || "—"}
+                          </div>
+                          {f.normalized_value && f.raw_value && f.normalized_value !== f.raw_value && (
+                            <div style={{ color:T.muted2, fontSize:9, marginTop:2, fontStyle:"italic" }}>
+                              raw: {f.raw_value.length > 60 ? f.raw_value.slice(0,60)+"…" : f.raw_value}
+                            </div>
+                          )}
+                        </td>
+                        <td style={S.td}>
+                          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                            <div style={{ width:40, height:4, borderRadius:2, background:T.navy3, overflow:"hidden" }}>
+                              <div style={{ width:`${conf*100}%`, height:"100%", background:confColor, borderRadius:2 }}/>
+                            </div>
+                            <span style={{ color:confColor, fontSize:10, fontFamily:"'DM Mono', monospace" }}>
+                              {(conf*100).toFixed(0)}%
+                            </span>
+                          </div>
+                        </td>
+                        <td style={{ ...S.td, fontSize:10, color:T.muted }}>
+                          {f.extraction_method || "—"}
+                          {f.rule_id && <span style={{ color:T.gold, marginLeft:4 }}>{f.rule_id}</span>}
+                        </td>
+                        <td style={{ ...S.td, textAlign:"center", color:T.muted2, fontFamily:"'DM Mono', monospace" }}>
+                          {f.source_page || "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     );
   };

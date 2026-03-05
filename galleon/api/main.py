@@ -843,6 +843,7 @@ def get_pipeline(pipeline_id: str):
         return PipelineOut(
             pipeline_id=str(row["id"]),
             status=row.get("status", "unknown"),
+            company_id=row.get("company_id"),
             fields_extracted=row.get("fields_extracted"),
             conflicts=row.get("conflicts_detected"),
             avg_confidence=float(row["avg_confidence"]) if row.get("avg_confidence") else None,
@@ -857,6 +858,7 @@ def get_pipeline(pipeline_id: str):
     return PipelineOut(
         pipeline_id=pipeline_id,
         status=mem["status"],
+        company_id=mem.get("company_id"),
         fields_extracted=summary.get("fields_in_best"),
         conflicts=summary.get("conflicts_detected"),
         avg_confidence=summary.get("avg_confidence"),

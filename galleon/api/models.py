@@ -106,6 +106,7 @@ class PipelineStepOut(BaseModel):
 class PipelineOut(BaseModel):
     pipeline_id: str
     status: str
+    company_id: Optional[str] = None
     steps: Optional[List[PipelineStepOut]] = None
     fields_extracted: Optional[int] = None
     conflicts: Optional[int] = None
