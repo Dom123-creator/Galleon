@@ -116,8 +116,91 @@ def init_db() -> None:
         key   TEXT PRIMARY KEY,
         value TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS organizations (
+        id                    TEXT PRIMARY KEY,
+        name                  TEXT NOT NULL,
+        plan                  TEXT DEFAULT 'free',
+        seats                 INTEGER DEFAULT 1,
+        stripe_customer_id    TEXT,
+        stripe_subscription_id TEXT,
+        created_at            TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS users (
+        id            TEXT PRIMARY KEY,
+        email         TEXT UNIQUE NOT NULL,
+        password_hash TEXT,
+        name          TEXT,
+        org_id        TEXT REFERENCES organizations(id),
+        role          TEXT DEFAULT 'member',
+        google_id     TEXT,
+        created_at    TEXT,
+        last_login    TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS usage (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        org_id     TEXT REFERENCES organizations(id),
+        user_id    TEXT REFERENCES users(id),
+        action     TEXT,
+        created_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+        token      TEXT PRIMARY KEY,
+        user_id    TEXT REFERENCES users(id),
+        created_at TEXT,
+        expires_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS invites (
+        id          TEXT PRIMARY KEY,
+        org_id      TEXT REFERENCES organizations(id),
+        email       TEXT,
+        role        TEXT DEFAULT 'member',
+        invited_by  TEXT,
+        token       TEXT UNIQUE,
+        status      TEXT DEFAULT 'pending',
+        created_at  TEXT,
+        expires_at  TEXT,
+        accepted_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS comments (
+        id          TEXT PRIMARY KEY,
+        review_id   TEXT,
+        user_id     TEXT,
+        user_name   TEXT,
+        user_role   TEXT,
+        body        TEXT,
+        created_at  TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS activity_log (
+        id          TEXT PRIMARY KEY,
+        org_id      TEXT,
+        user_id     TEXT,
+        user_name   TEXT,
+        action      TEXT,
+        target_type TEXT,
+        target_id   TEXT,
+        details     TEXT,
+        created_at  TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_activity_org_date ON activity_log (org_id, created_at);
     """)
     _conn.commit()
+
+    # ── Migrations (idempotent) ──────────────────────────────────────────────
+    for col, default in [("assignee_id", "TEXT"), ("created_by", "TEXT")]:
+        try:
+            _conn.execute(f"ALTER TABLE deal_reviews ADD COLUMN {col} {default}")
+            _conn.commit()
+        except Exception:
+            pass  # column already exists
+
     print(f"[sqlite_store] Initialized DB at {DB_PATH}")
 
 
@@ -191,12 +274,13 @@ def save_deal_review(review: Dict) -> None:
     with _lock:
         conn.execute(
             """INSERT OR REPLACE INTO deal_reviews
-               (id, company_name, company_id, status, assignee, notes, priority, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, company_name, company_id, status, assignee, notes, priority, created_at, updated_at, assignee_id, created_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 review["id"], review.get("company_name"), review.get("company_id"),
                 review.get("status"), review.get("assignee"), review.get("notes"),
                 review.get("priority"), review.get("created_at"), review.get("updated_at"),
+                review.get("assignee_id"), review.get("created_by"),
             ),
         )
         conn.commit()
@@ -388,3 +472,279 @@ def save_known_filing(cik: str, last_accession: str) -> None:
             (cik, last_accession, datetime.utcnow().isoformat() + "Z"),
         )
         conn.commit()
+
+
+# ── Organizations ────────────────────────────────────────────────────────────
+
+def save_org(org: Dict) -> None:
+    conn = _get_conn()
+    with _lock:
+        conn.execute(
+            """INSERT OR REPLACE INTO organizations
+               (id, name, plan, seats, stripe_customer_id, stripe_subscription_id, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (org["id"], org["name"], org.get("plan", "free"), org.get("seats", 1),
+             org.get("stripe_customer_id"), org.get("stripe_subscription_id"),
+             org.get("created_at")),
+        )
+        conn.commit()
+
+
+def get_org(org_id: str) -> Optional[Dict]:
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM organizations WHERE id = ?", (org_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def update_org(org_id: str, updates: Dict) -> None:
+    conn = _get_conn()
+    sets = ", ".join(f"{k} = ?" for k in updates)
+    vals = list(updates.values()) + [org_id]
+    with _lock:
+        conn.execute(f"UPDATE organizations SET {sets} WHERE id = ?", vals)
+        conn.commit()
+
+
+# ── Users ────────────────────────────────────────────────────────────────────
+
+def save_user(user: Dict) -> None:
+    conn = _get_conn()
+    with _lock:
+        conn.execute(
+            """INSERT OR REPLACE INTO users
+               (id, email, password_hash, name, org_id, role, google_id, created_at, last_login)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user["id"], user["email"], user.get("password_hash"), user.get("name"),
+             user.get("org_id"), user.get("role", "member"), user.get("google_id"),
+             user.get("created_at"), user.get("last_login")),
+        )
+        conn.commit()
+
+
+def get_user_by_email(email: str) -> Optional[Dict]:
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_user_by_id(user_id: str) -> Optional[Dict]:
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_user_by_google_id(google_id: str) -> Optional[Dict]:
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM users WHERE google_id = ?", (google_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def update_user(user_id: str, updates: Dict) -> None:
+    conn = _get_conn()
+    sets = ", ".join(f"{k} = ?" for k in updates)
+    vals = list(updates.values()) + [user_id]
+    with _lock:
+        conn.execute(f"UPDATE users SET {sets} WHERE id = ?", vals)
+        conn.commit()
+
+
+def get_org_seats_used(org_id: str) -> int:
+    conn = _get_conn()
+    row = conn.execute("SELECT COUNT(*) FROM users WHERE org_id = ?", (org_id,)).fetchone()
+    return row[0] if row else 0
+
+
+# ── Usage Tracking ───────────────────────────────────────────────────────────
+
+def increment_usage(org_id: str, user_id: str, action: str) -> None:
+    conn = _get_conn()
+    with _lock:
+        conn.execute(
+            "INSERT INTO usage (org_id, user_id, action, created_at) VALUES (?, ?, ?, ?)",
+            (org_id, user_id, action, datetime.utcnow().isoformat() + "Z"),
+        )
+        conn.commit()
+
+
+def get_monthly_usage(org_id: str) -> int:
+    conn = _get_conn()
+    # Count usage records for current month
+    now = datetime.utcnow()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat() + "Z"
+    row = conn.execute(
+        "SELECT COUNT(*) FROM usage WHERE org_id = ? AND created_at >= ?",
+        (org_id, month_start),
+    ).fetchone()
+    return row[0] if row else 0
+
+
+# ── Invites ─────────────────────────────────────────────────────────────────
+
+def save_invite(invite: Dict) -> None:
+    conn = _get_conn()
+    with _lock:
+        conn.execute(
+            """INSERT OR REPLACE INTO invites
+               (id, org_id, email, role, invited_by, token, status, created_at, expires_at, accepted_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (invite["id"], invite["org_id"], invite["email"], invite.get("role", "member"),
+             invite.get("invited_by"), invite["token"], invite.get("status", "pending"),
+             invite.get("created_at"), invite.get("expires_at"), invite.get("accepted_at")),
+        )
+        conn.commit()
+
+
+def get_invite_by_token(token: str) -> Optional[Dict]:
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM invites WHERE token = ?", (token,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_org_invites(org_id: str) -> List[Dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM invites WHERE org_id = ? ORDER BY created_at DESC", (org_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_invite(invite_id: str, updates: Dict) -> None:
+    conn = _get_conn()
+    sets = ", ".join(f"{k} = ?" for k in updates)
+    vals = list(updates.values()) + [invite_id]
+    with _lock:
+        conn.execute(f"UPDATE invites SET {sets} WHERE id = ?", vals)
+        conn.commit()
+
+
+def delete_invite(invite_id: str) -> None:
+    conn = _get_conn()
+    with _lock:
+        conn.execute("DELETE FROM invites WHERE id = ?", (invite_id,))
+        conn.commit()
+
+
+def count_pending_invites(org_id: str) -> int:
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT COUNT(*) FROM invites WHERE org_id = ? AND status = 'pending'", (org_id,)
+    ).fetchone()
+    return row[0] if row else 0
+
+
+# ── Comments ────────────────────────────────────────────────────────────────
+
+def save_comment(comment: Dict) -> None:
+    conn = _get_conn()
+    with _lock:
+        conn.execute(
+            """INSERT INTO comments (id, review_id, user_id, user_name, user_role, body, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (comment["id"], comment["review_id"], comment["user_id"],
+             comment.get("user_name"), comment.get("user_role"),
+             comment["body"], comment["created_at"]),
+        )
+        conn.commit()
+
+
+def list_comments_for_review(review_id: str) -> List[Dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM comments WHERE review_id = ? ORDER BY created_at ASC", (review_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_comments_by_reviews(review_ids: List[str]) -> Dict[str, int]:
+    """Return {review_id: comment_count} for the given review IDs."""
+    if not review_ids:
+        return {}
+    conn = _get_conn()
+    placeholders = ",".join("?" for _ in review_ids)
+    rows = conn.execute(
+        f"SELECT review_id, COUNT(*) as cnt FROM comments WHERE review_id IN ({placeholders}) GROUP BY review_id",
+        review_ids,
+    ).fetchall()
+    return {r["review_id"]: r["cnt"] for r in rows}
+
+
+# ── Activity Log ────────────────────────────────────────────────────────────
+
+def log_activity(org_id: str, user_id: str, user_name: str, action: str,
+                 target_type: str = "", target_id: str = "", details: Optional[Dict] = None) -> None:
+    conn = _get_conn()
+    import uuid as _uuid
+    with _lock:
+        conn.execute(
+            """INSERT INTO activity_log (id, org_id, user_id, user_name, action, target_type, target_id, details, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (str(_uuid.uuid4()), org_id, user_id, user_name or "", action,
+             target_type, target_id, json.dumps(details) if details else None,
+             datetime.utcnow().isoformat() + "Z"),
+        )
+        conn.commit()
+
+
+def list_org_activity(org_id: str, limit: int = 50, offset: int = 0) -> List[Dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM activity_log WHERE org_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        (org_id, limit, offset),
+    ).fetchall()
+    results = []
+    for r in rows:
+        d = dict(r)
+        if d.get("details"):
+            d["details"] = json.loads(d["details"])
+        results.append(d)
+    return results
+
+
+# ── Analytics ───────────────────────────────────────────────────────────────
+
+def get_usage_by_user(org_id: str, month_start: str) -> List[Dict]:
+    """Per-user usage counts for a month."""
+    conn = _get_conn()
+    rows = conn.execute(
+        """SELECT u.id, u.name, u.email, u.role, COUNT(us.id) as count
+           FROM users u LEFT JOIN usage us ON u.id = us.user_id AND us.created_at >= ?
+           WHERE u.org_id = ?
+           GROUP BY u.id ORDER BY count DESC""",
+        (month_start, org_id),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_usage_daily_trend(org_id: str, month_start: str) -> List[Dict]:
+    """Daily usage counts for a month."""
+    conn = _get_conn()
+    rows = conn.execute(
+        """SELECT DATE(created_at) as date, COUNT(*) as count
+           FROM usage WHERE org_id = ? AND created_at >= ?
+           GROUP BY DATE(created_at) ORDER BY date""",
+        (org_id, month_start),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_usage_by_action(org_id: str, month_start: str) -> Dict[str, int]:
+    """Usage counts by action type for a month."""
+    conn = _get_conn()
+    rows = conn.execute(
+        """SELECT action, COUNT(*) as count
+           FROM usage WHERE org_id = ? AND created_at >= ?
+           GROUP BY action ORDER BY count DESC""",
+        (org_id, month_start),
+    ).fetchall()
+    return {r["action"]: r["count"] for r in rows}
+
+
+# ── Team ────────────────────────────────────────────────────────────────────
+
+def list_org_users(org_id: str) -> List[Dict]:
+    """List all users in an organization."""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM users WHERE org_id = ? ORDER BY created_at ASC", (org_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]

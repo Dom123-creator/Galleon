@@ -462,8 +462,11 @@ class DealReview(BaseModel):
     company_id: Optional[str] = None
     status: str = "pending"
     assignee: Optional[str] = None
+    assignee_id: Optional[str] = None
     notes: Optional[str] = None
     priority: str = "medium"
+    created_by: Optional[str] = None
+    comment_count: int = 0
     created_at: str
     updated_at: str
 
@@ -472,6 +475,7 @@ class DealReviewCreate(BaseModel):
     company_name: str
     company_id: Optional[str] = None
     assignee: Optional[str] = None
+    assignee_id: Optional[str] = None
     notes: Optional[str] = None
     priority: str = "medium"
 
@@ -479,6 +483,7 @@ class DealReviewCreate(BaseModel):
 class DealReviewUpdate(BaseModel):
     status: Optional[str] = None
     assignee: Optional[str] = None
+    assignee_id: Optional[str] = None
     notes: Optional[str] = None
     priority: Optional[str] = None
 
@@ -499,3 +504,150 @@ class ExposureReport(BaseModel):
     by_facility_type: Dict[str, float] = {}
     non_accrual_exposure_usd: float = 0
     concentration_alerts: List[ConcentrationLimit] = []
+
+
+# ── Auth ─────────────────────────────────────────────────────────────────────
+
+class RegisterIn(BaseModel):
+    email: str
+    password: str
+    name: Optional[str] = None
+
+
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+
+class GoogleAuthIn(BaseModel):
+    code: str
+
+
+class AuthTokenOut(BaseModel):
+    token: str
+    user: Dict[str, Any]
+
+
+class UsageInfo(BaseModel):
+    used: int = 0
+    limit: Optional[int] = None
+    remaining: Optional[int] = None
+    unlimited: bool = False
+
+
+class UserMeOut(BaseModel):
+    id: str
+    email: str
+    name: Optional[str] = None
+    role: str = "member"
+    org: Dict[str, Any] = {}
+    usage: UsageInfo = UsageInfo()
+
+
+# ── Billing ──────────────────────────────────────────────────────────────────
+
+class CheckoutIn(BaseModel):
+    plan: str = "pro"
+    seats: int = 1
+
+
+class CheckoutOut(BaseModel):
+    url: str
+
+
+class BillingUsageOut(BaseModel):
+    plan: str = "free"
+    seats: int = 1
+    seats_used: int = 1
+    usage: UsageInfo = UsageInfo()
+
+
+# ── Invites ────────────────────────────────────────────────────────────────
+
+class InviteCreate(BaseModel):
+    email: str
+    role: str = "member"
+
+
+class InviteOut(BaseModel):
+    id: str
+    email: str
+    role: str = "member"
+    status: str = "pending"
+    invited_by: Optional[str] = None
+    token: Optional[str] = None
+    created_at: str
+    expires_at: Optional[str] = None
+
+
+class InviteAcceptIn(BaseModel):
+    token: str
+    password: Optional[str] = None
+    name: Optional[str] = None
+
+
+# ── Team ────────────────────────────────────────────────────────────────────
+
+class TeamMemberOut(BaseModel):
+    id: str
+    email: str
+    name: Optional[str] = None
+    role: str = "member"
+    last_login: Optional[str] = None
+    activity_count: int = 0
+
+
+class RoleUpdate(BaseModel):
+    role: str
+
+
+# ── Comments ────────────────────────────────────────────────────────────────
+
+class CommentCreate(BaseModel):
+    body: str
+
+
+class CommentOut(BaseModel):
+    id: str
+    review_id: str
+    user_id: str
+    user_name: Optional[str] = None
+    user_role: Optional[str] = None
+    body: str
+    created_at: str
+
+
+# ── Activity ────────────────────────────────────────────────────────────────
+
+class ActivityOut(BaseModel):
+    id: str
+    user_id: Optional[str] = None
+    user_name: Optional[str] = None
+    action: str
+    target_type: Optional[str] = None
+    target_id: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+    created_at: str
+
+
+# ── Usage Analytics ─────────────────────────────────────────────────────────
+
+class UserUsageStat(BaseModel):
+    id: str
+    name: Optional[str] = None
+    email: str
+    role: str = "member"
+    count: int = 0
+
+
+class DailyUsageStat(BaseModel):
+    date: str
+    count: int = 0
+
+
+class UsageAnalyticsOut(BaseModel):
+    month: str
+    total: int = 0
+    by_user: List[UserUsageStat] = []
+    by_day: List[DailyUsageStat] = []
+    by_action: Dict[str, int] = {}

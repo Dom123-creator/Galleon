@@ -11,7 +11,14 @@ const API_BASE = (() => {
 
 async function apiFetch(path, opts = {}) {
   try {
-    const res = await fetch(`${API_BASE}${path}`, opts);
+    const token = localStorage.getItem("galleon_token");
+    const headers = { ...(opts.headers || {}) };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE}${path}`, { ...opts, headers });
+    if (res.status === 401) {
+      localStorage.removeItem("galleon_token");
+      window.dispatchEvent(new Event("galleon_logout"));
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (e) {
@@ -622,7 +629,688 @@ export class ErrorBoundary extends React.Component {
   }
 }
 
+// ─── Auth Screen ─────────────────────────────────────────────────────────────
+function AuthScreen({ onLogin }) {
+  const [mode, setMode] = useState("login"); // login | signup
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    const endpoint = mode === "login" ? "/auth/login" : "/auth/register";
+    const payload = mode === "login"
+      ? { email, password }
+      : { email, password, name: name || undefined };
+    try {
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.detail || "Authentication failed");
+        setLoading(false);
+        return;
+      }
+      localStorage.setItem("galleon_token", data.token);
+      onLogin(data.user);
+    } catch (err) {
+      setError("Network error — is the API running?");
+    }
+    setLoading(false);
+  };
+
+  const handleGoogle = async () => {
+    const data = await apiFetch("/auth/google/url");
+    if (data?.url) window.location.href = data.url;
+  };
+
+  const inputStyle = {
+    width: "100%", padding: "10px 14px", background: T.navy3, border: `1px solid ${T.border}`,
+    borderRadius: 6, color: T.cream, fontSize: 13, fontFamily: "'DM Mono', monospace",
+    outline: "none", boxSizing: "border-box",
+  };
+
+  return (
+    <div style={{ background: T.navy, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Mono:wght@400;500&display=swap'); * { box-sizing: border-box; } body { margin: 0; }`}</style>
+      <div style={{ width: 400, padding: 40 }}>
+        {/* Logo */}
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <svg width="40" height="40" viewBox="0 0 28 28" fill="none" style={{ marginBottom: 12 }}>
+            <path d="M4 20 Q14 8 24 20" stroke={T.gold} strokeWidth="1.8" fill="none"/>
+            <path d="M14 6 L14 20" stroke={T.gold} strokeWidth="1.5"/>
+            <path d="M14 8 L20 14 L14 14 Z" fill={T.gold} opacity="0.7"/>
+            <path d="M4 20 Q14 24 24 20 L24 22 Q14 27 4 22 Z" fill={T.gold} opacity="0.4"/>
+            <path d="M1 22 L27 22" stroke={T.gold2} strokeWidth="0.8" opacity="0.5"/>
+          </svg>
+          <div style={{ color: T.gold, fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, letterSpacing: "0.04em" }}>GALLEON</div>
+          <div style={{ color: T.muted, fontSize: 12, marginTop: 6, fontFamily: "'DM Mono', monospace" }}>
+            {mode === "login" ? "Sign in to your account" : "Create your account"}
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ background: `${T.red}15`, border: `1px solid ${T.red}44`, borderRadius: 6, padding: "8px 14px", marginBottom: 16, color: T.red, fontSize: 12, fontFamily: "'DM Mono', monospace" }}>
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          {mode === "signup" && (
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: "block", color: T.muted, fontSize: 10, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace" }}>Name</label>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" style={inputStyle} />
+            </div>
+          )}
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", color: T.muted, fontSize: 10, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace" }}>Email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required style={inputStyle} />
+          </div>
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: "block", color: T.muted, fontSize: 10, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace" }}>Password</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min 6 characters" required minLength={6} style={inputStyle} />
+          </div>
+          <button type="submit" disabled={loading} style={{
+            width: "100%", padding: "11px 0", background: T.gold, color: T.navy, border: "none",
+            borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer",
+            fontFamily: "'DM Mono', monospace", letterSpacing: "0.05em", opacity: loading ? 0.7 : 1,
+          }}>
+            {loading ? "..." : mode === "login" ? "SIGN IN" : "CREATE ACCOUNT"}
+          </button>
+        </form>
+
+        {/* Google OAuth */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0" }}>
+          <div style={{ flex: 1, height: 1, background: T.border }} />
+          <span style={{ color: T.muted, fontSize: 10, fontFamily: "'DM Mono', monospace" }}>OR</span>
+          <div style={{ flex: 1, height: 1, background: T.border }} />
+        </div>
+        <button onClick={handleGoogle} style={{
+          width: "100%", padding: "10px 0", background: "transparent", color: T.cream2,
+          border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, cursor: "pointer",
+          fontFamily: "'DM Mono', monospace",
+        }}>
+          Sign in with Google
+        </button>
+
+        {/* Toggle */}
+        <div style={{ textAlign: "center", marginTop: 24, fontSize: 12, color: T.muted, fontFamily: "'DM Mono', monospace" }}>
+          {mode === "login" ? "Don't have an account? " : "Already have an account? "}
+          <span onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}
+            style={{ color: T.gold, cursor: "pointer", textDecoration: "underline" }}>
+            {mode === "login" ? "Sign up" : "Sign in"}
+          </span>
+        </div>
+
+        {/* Pricing teaser */}
+        <div style={{ marginTop: 32, background: T.navy2, border: `1px solid ${T.border}`, borderRadius: 8, padding: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.gold, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 10, fontFamily: "'DM Mono', monospace" }}>Plans</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            {[
+              { plan: "Free", price: "$0", desc: "1 seat, 25 gen/mo" },
+              { plan: "Pro", price: "$500", desc: "1-4 seats, 500 gen/seat" },
+              { plan: "Enterprise", price: "Custom", desc: "Up to 20 seats" },
+            ].map(p => (
+              <div key={p.plan} style={{ flex: 1, padding: "8px 10px", background: T.navy3, borderRadius: 6, textAlign: "center" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.cream, fontFamily: "'DM Mono', monospace" }}>{p.plan}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: T.gold, fontFamily: "'Playfair Display', serif", margin: "4px 0" }}>{p.price}</div>
+                <div style={{ fontSize: 9, color: T.muted, fontFamily: "'DM Mono', monospace" }}>{p.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── Invite Accept Screen ───────────────────────────────────────────────────
+function InviteAcceptScreen({ token, onAccepted }) {
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleAccept = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/team/invites/accept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password, name: name || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.detail || "Failed to accept invite"); setLoading(false); return; }
+      localStorage.setItem("galleon_token", data.token);
+      window.history.replaceState({}, "", window.location.pathname);
+      onAccepted(data.user);
+    } catch { setError("Network error"); }
+    setLoading(false);
+  };
+
+  const inputStyle = {
+    width: "100%", padding: "10px 14px", background: T.navy3, border: `1px solid ${T.border}`,
+    borderRadius: 6, color: T.cream, fontSize: 13, fontFamily: "'DM Mono', monospace", outline: "none", boxSizing: "border-box",
+  };
+
+  return (
+    <div style={{ background: T.navy, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Mono:wght@400;500&display=swap'); * { box-sizing: border-box; } body { margin: 0; }`}</style>
+      <div style={{ width: 400, padding: 40 }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <svg width="40" height="40" viewBox="0 0 28 28" fill="none" style={{ marginBottom: 12 }}>
+            <path d="M4 20 Q14 8 24 20" stroke={T.gold} strokeWidth="1.8" fill="none"/>
+            <path d="M14 6 L14 20" stroke={T.gold} strokeWidth="1.5"/>
+            <path d="M14 8 L20 14 L14 14 Z" fill={T.gold} opacity="0.7"/>
+            <path d="M4 20 Q14 24 24 20 L24 22 Q14 27 4 22 Z" fill={T.gold} opacity="0.4"/>
+            <path d="M1 22 L27 22" stroke={T.gold2} strokeWidth="0.8" opacity="0.5"/>
+          </svg>
+          <div style={{ color: T.gold, fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, letterSpacing: "0.04em" }}>GALLEON</div>
+          <div style={{ color: T.muted, fontSize: 12, marginTop: 6, fontFamily: "'DM Mono', monospace" }}>Join your team</div>
+        </div>
+        {error && <div style={{ background: `${T.red}15`, border: `1px solid ${T.red}44`, borderRadius: 6, padding: "8px 14px", marginBottom: 16, color: T.red, fontSize: 12, fontFamily: "'DM Mono', monospace" }}>{error}</div>}
+        <form onSubmit={handleAccept}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", color: T.muted, fontSize: 10, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace" }}>Name</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" style={inputStyle} />
+          </div>
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: "block", color: T.muted, fontSize: 10, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace" }}>Password</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min 6 characters" required minLength={6} style={inputStyle} />
+          </div>
+          <button type="submit" disabled={loading} style={{
+            width: "100%", padding: "11px 0", background: T.gold, color: T.navy, border: "none",
+            borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer",
+            fontFamily: "'DM Mono', monospace", letterSpacing: "0.05em", opacity: loading ? 0.7 : 1,
+          }}>{loading ? "..." : "JOIN TEAM"}</button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Deal Review Detail Modal ───────────────────────────────────────────────
+function DealReviewDetail({ review, teamMembers, onClose, onUpdate, addToast }) {
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState("");
+  const [posting, setPosting] = useState(false);
+
+  useEffect(() => {
+    if (review?.id) apiFetch(`/workflow/reviews/${review.id}/comments`).then(d => { if (d) setComments(d); });
+  }, [review?.id]);
+
+  const postComment = async () => {
+    if (!newComment.trim()) return;
+    setPosting(true);
+    const data = await apiFetch(`/workflow/reviews/${review.id}/comments`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: newComment.trim() }),
+    });
+    if (data) { setComments(prev => [...prev, data]); setNewComment(""); addToast("Comment posted", "success"); }
+    setPosting(false);
+  };
+
+  const handleAssignee = async (assigneeId) => {
+    const member = teamMembers.find(m => m.id === assigneeId);
+    const data = await apiFetch(`/workflow/reviews/${review.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assignee_id: assigneeId, assignee: member?.name || member?.email || "" }),
+    });
+    if (data) onUpdate(data);
+  };
+
+  const handleStatus = async (newStatus) => {
+    const data = await apiFetch(`/workflow/reviews/${review.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    if (data) onUpdate(data);
+  };
+
+  const statusColors = { pending: T.amber, under_review: T.blue, approved: T.green, closed: T.muted };
+  const statusLabels = { pending: "Pending", under_review: "Under Review", approved: "Approved", closed: "Closed" };
+  const prioColors = { high: T.red, medium: T.amber, low: T.green };
+
+  if (!review) return null;
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+      <div style={{ background: T.navy2, border: `1px solid ${T.border}`, borderRadius: 12, padding: 28, width: 560, maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: T.cream, fontFamily: "'Playfair Display', serif" }}>{review.company_name}</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 18 }}>x</button>
+        </div>
+
+        {/* Status + Priority */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <span style={{ background: `${statusColors[review.status]}22`, color: statusColors[review.status], padding: "3px 10px", borderRadius: 4, fontSize: 10, fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>{statusLabels[review.status] || review.status}</span>
+          <span style={{ background: `${prioColors[review.priority]}22`, color: prioColors[review.priority], padding: "3px 10px", borderRadius: 4, fontSize: 10, fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>{review.priority} priority</span>
+        </div>
+
+        {/* Notes */}
+        {review.notes && <div style={{ fontSize: 12, color: T.cream2, marginBottom: 16, fontFamily: "'DM Mono', monospace", lineHeight: 1.6 }}>{review.notes}</div>}
+
+        {/* Assignee dropdown */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6, fontFamily: "'DM Mono', monospace" }}>Assignee</div>
+          <select value={review.assignee_id || ""} onChange={e => handleAssignee(e.target.value)}
+            style={{ padding: "6px 10px", background: T.navy3, border: `1px solid ${T.border}`, borderRadius: 4, color: T.cream, fontSize: 12, fontFamily: "'DM Mono', monospace", outline: "none", minWidth: 180 }}>
+            <option value="">Unassigned</option>
+            {(teamMembers || []).map(m => <option key={m.id} value={m.id}>{m.name || m.email}</option>)}
+          </select>
+        </div>
+
+        {/* Status buttons */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6, fontFamily: "'DM Mono', monospace" }}>Move to</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {["pending", "under_review", "approved", "closed"].filter(s => s !== review.status).map(s => (
+              <button key={s} onClick={() => handleStatus(s)}
+                style={{ background: T.navy3, border: `1px solid ${statusColors[s]}44`, borderRadius: 4, padding: "5px 14px", color: statusColors[s], fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Mono', monospace" }}>
+                {statusLabels[s]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Comments thread */}
+        <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12, fontFamily: "'DM Mono', monospace" }}>Comments ({comments.length})</div>
+          <div style={{ maxHeight: 240, overflowY: "auto", marginBottom: 12 }}>
+            {comments.map(c => (
+              <div key={c.id} style={{ marginBottom: 12, padding: "8px 12px", background: T.navy3, borderRadius: 6, borderLeft: `3px solid ${c.user_role === "owner" ? T.gold : c.user_role === "admin" ? T.blue : T.muted}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: T.cream, fontFamily: "'DM Mono', monospace" }}>{c.user_name}</span>
+                  <span style={{ fontSize: 9, color: T.muted, fontFamily: "'DM Mono', monospace" }}>{c.created_at?.split("T")[0]}</span>
+                </div>
+                <div style={{ fontSize: 12, color: T.cream2, fontFamily: "'DM Mono', monospace", lineHeight: 1.5 }}>{c.body}</div>
+              </div>
+            ))}
+            {comments.length === 0 && <div style={{ textAlign: "center", color: T.muted, fontSize: 11, padding: 16 }}>No comments yet</div>}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={newComment} onChange={e => setNewComment(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && !e.shiftKey && postComment()}
+              placeholder="Add a comment..."
+              style={{ flex: 1, padding: "8px 12px", background: T.navy3, border: `1px solid ${T.border}`, borderRadius: 4, color: T.cream, fontSize: 12, fontFamily: "'DM Mono', monospace", outline: "none" }} />
+            <button onClick={postComment} disabled={posting || !newComment.trim()}
+              style={{ background: T.gold, color: T.navy, border: "none", borderRadius: 4, padding: "8px 16px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Mono', monospace", opacity: posting ? 0.6 : 1 }}>
+              {posting ? "..." : "Post"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Settings / Billing Panel (Tabbed) ──────────────────────────────────────
+function SettingsPanel({ user, onClose, onLogout }) {
+  const [settingsTab, setSettingsTab] = useState("account");
+  const [billingUsage, setBillingUsage] = useState(null);
+  const [upgrading, setUpgrading] = useState(false);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [invites, setInvites] = useState([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("member");
+  const [inviting, setInviting] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(null);
+  const [activity, setActivity] = useState([]);
+  const [usageData, setUsageData] = useState(null);
+
+  useEffect(() => {
+    apiFetch("/billing/usage").then(d => { if (d) setBillingUsage(d); });
+    apiFetch("/team/members").then(d => { if (d) setTeamMembers(d); });
+    apiFetch("/team/invites").then(d => { if (d) setInvites(d); });
+    apiFetch("/team/activity?limit=50").then(d => { if (d) setActivity(d); });
+    apiFetch("/team/usage").then(d => { if (d) setUsageData(d); });
+  }, []);
+
+  const handleUpgrade = async (seats = 1) => {
+    setUpgrading(true);
+    const data = await apiFetch("/billing/checkout", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan: "pro", seats }),
+    });
+    if (data?.url) window.location.href = data.url;
+    setUpgrading(false);
+  };
+
+  const handlePortal = async () => {
+    const data = await apiFetch("/billing/portal");
+    if (data?.url) window.location.href = data.url;
+  };
+
+  const handleInvite = async () => {
+    if (!inviteEmail.trim()) return;
+    setInviting(true);
+    const data = await apiFetch("/team/invites", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+    });
+    if (data) { setInvites(prev => [data, ...prev]); setInviteEmail(""); }
+    setInviting(false);
+  };
+
+  const copyInviteLink = (token) => {
+    const link = `${window.location.origin}?token=${token}`;
+    navigator.clipboard.writeText(link).then(() => { setCopiedToken(token); setTimeout(() => setCopiedToken(null), 2000); });
+  };
+
+  const revokeInvite = async (id) => {
+    await apiFetch(`/team/invites/${id}`, { method: "DELETE" });
+    setInvites(prev => prev.filter(i => i.id !== id));
+  };
+
+  const changeRole = async (memberId, newRole) => {
+    await apiFetch(`/team/members/${memberId}/role`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: newRole }),
+    });
+    setTeamMembers(prev => prev.map(m => m.id === memberId ? { ...m, role: newRole } : m));
+  };
+
+  const removeMember = async (memberId) => {
+    await apiFetch(`/team/members/${memberId}`, { method: "DELETE" });
+    setTeamMembers(prev => prev.filter(m => m.id !== memberId));
+  };
+
+  const bu = billingUsage || {};
+  const usage = bu.usage || {};
+  const usedPct = usage.limit ? Math.min(100, (usage.used / usage.limit) * 100) : 0;
+  const isOwner = user?.role === "owner";
+  const isAdmin = user?.role === "admin" || isOwner;
+
+  const STABS = [
+    { id: "account", label: "Account" },
+    { id: "team", label: "Team" },
+    { id: "activity", label: "Activity" },
+    { id: "usage", label: "Usage" },
+  ];
+
+  const actionLabels = {
+    register: "Registered", login: "Signed in", create_review: "Created review", update_review: "Updated review",
+    comment: "Commented", invite_member: "Invited member", join_team: "Joined team", change_role: "Changed role",
+    remove_member: "Removed member", upload: "Uploaded document", assistant_chat: "AI chat",
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={onClose}>
+      <div style={{ background: T.navy2, border: `1px solid ${T.border}`, borderRadius: 12, padding: 28, width: 560, maxHeight: "85vh", overflowY: "auto" }}
+        onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: T.cream, fontFamily: "'Playfair Display', serif" }}>Settings</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 18 }}>x</button>
+        </div>
+
+        {/* Tab bar */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${T.border}`, paddingBottom: 10 }}>
+          {STABS.map(st => (
+            <button key={st.id} onClick={() => setSettingsTab(st.id)}
+              style={{ background: settingsTab === st.id ? T.navy3 : "transparent", color: settingsTab === st.id ? T.gold2 : T.muted2, border: `1px solid ${settingsTab === st.id ? T.border2 : "transparent"}`, borderRadius: 4, padding: "5px 14px", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>
+              {st.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Account Tab ── */}
+        {settingsTab === "account" && (<>
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8, fontFamily: "'DM Mono', monospace" }}>Account</div>
+            <div style={{ color: T.cream, fontSize: 13, fontFamily: "'DM Mono', monospace" }}>{user?.name || user?.email}</div>
+            <div style={{ color: T.muted, fontSize: 11, fontFamily: "'DM Mono', monospace" }}>{user?.email}</div>
+            <div style={{ color: T.gold, fontSize: 10, fontFamily: "'DM Mono', monospace", marginTop: 4 }}>{user?.role?.toUpperCase()} · {user?.org?.name}</div>
+          </div>
+          <div style={{ background: T.navy3, borderRadius: 8, padding: 16, marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.cream, fontFamily: "'DM Mono', monospace" }}>{(bu.plan || "free").toUpperCase()}</span>
+                <span style={{ fontSize: 11, color: T.muted, marginLeft: 8, fontFamily: "'DM Mono', monospace" }}>{bu.seats_used || 1}/{bu.seats || 1} seats</span>
+              </div>
+              {bu.plan !== "enterprise" && (
+                <button onClick={() => bu.plan === "pro" ? handlePortal() : handleUpgrade(1)} disabled={upgrading}
+                  style={{ background: T.gold, color: T.navy, border: "none", borderRadius: 4, padding: "5px 14px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Mono', monospace" }}>
+                  {bu.plan === "pro" ? "MANAGE" : "UPGRADE"}
+                </button>
+              )}
+            </div>
+            {!usage.unlimited && (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: T.muted, marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>
+                  <span>Generations this month</span><span>{usage.used || 0}/{usage.limit || 25}</span>
+                </div>
+                <div style={{ height: 6, background: T.navy, borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${usedPct}%`, background: usedPct > 90 ? T.red : usedPct > 70 ? T.amber : T.green, borderRadius: 3, transition: "width 0.3s" }} />
+                </div>
+              </div>
+            )}
+            {usage.unlimited && <div style={{ fontSize: 11, color: T.green, fontFamily: "'DM Mono', monospace" }}>Unlimited generations</div>}
+          </div>
+          {bu.plan === "free" && (
+            <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+              <div style={{ flex: 1, background: T.navy3, border: `1px solid ${T.gold}44`, borderRadius: 8, padding: 14, textAlign: "center" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace" }}>Pro</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: T.cream, fontFamily: "'Playfair Display', serif", margin: "6px 0" }}>$500<span style={{ fontSize: 11, color: T.muted }}>/seat/mo</span></div>
+                <div style={{ fontSize: 9, color: T.muted, fontFamily: "'DM Mono', monospace", marginBottom: 10 }}>500 gen/seat, up to 4 seats</div>
+                <button onClick={() => handleUpgrade(1)} disabled={upgrading}
+                  style={{ background: T.gold, color: T.navy, border: "none", borderRadius: 4, padding: "6px 18px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Mono', monospace" }}>
+                  {upgrading ? "..." : "UPGRADE"}
+                </button>
+              </div>
+              <div style={{ flex: 1, background: T.navy3, border: `1px solid ${T.border}`, borderRadius: 8, padding: 14, textAlign: "center" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.cream, fontFamily: "'DM Mono', monospace" }}>Enterprise</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: T.cream, fontFamily: "'Playfair Display', serif", margin: "6px 0" }}>Custom</div>
+                <div style={{ fontSize: 9, color: T.muted, fontFamily: "'DM Mono', monospace", marginBottom: 10 }}>Up to 20 seats, unlimited gen</div>
+                <a href="mailto:sales@galleon.finance" style={{ background: "transparent", color: T.gold, border: `1px solid ${T.gold}44`, borderRadius: 4, padding: "5px 14px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Mono', monospace", textDecoration: "none", display: "inline-block" }}>CONTACT SALES</a>
+              </div>
+            </div>
+          )}
+          <button onClick={onLogout}
+            style={{ width: "100%", padding: "10px 0", background: "transparent", color: T.red, border: `1px solid ${T.red}44`, borderRadius: 6, fontSize: 12, cursor: "pointer", fontFamily: "'DM Mono', monospace", marginTop: 8 }}>
+            Sign Out
+          </button>
+        </>)}
+
+        {/* ── Team Tab ── */}
+        {settingsTab === "team" && (<>
+          {/* Members table */}
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10, fontFamily: "'DM Mono', monospace" }}>Members ({teamMembers.length})</div>
+          <div style={{ marginBottom: 20 }}>
+            {teamMembers.map(m => (
+              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${T.navy3}` }}>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: m.role === "owner" ? T.gold : T.navy3, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: m.role === "owner" ? T.navy : T.cream, fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>
+                  {(m.name || m.email || "?")[0].toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: T.cream, fontFamily: "'DM Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name || m.email}</div>
+                  <div style={{ fontSize: 10, color: T.muted, fontFamily: "'DM Mono', monospace" }}>{m.email}</div>
+                </div>
+                <div style={{ fontSize: 9, color: T.muted, fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{m.activity_count} actions</div>
+                {isOwner && m.id !== user?.id ? (
+                  <select value={m.role} onChange={e => changeRole(m.id, e.target.value)}
+                    style={{ background: T.navy3, border: `1px solid ${T.border}`, borderRadius: 4, padding: "3px 8px", color: T.gold, fontSize: 10, fontFamily: "'DM Mono', monospace", outline: "none" }}>
+                    <option value="member">member</option>
+                    <option value="admin">admin</option>
+                    <option value="owner">owner</option>
+                  </select>
+                ) : (
+                  <span style={{ fontSize: 10, color: T.gold, fontFamily: "'DM Mono', monospace", background: `${T.gold}15`, padding: "2px 8px", borderRadius: 3 }}>{m.role}</span>
+                )}
+                {isAdmin && m.id !== user?.id && m.role !== "owner" && (
+                  <button onClick={() => removeMember(m.id)}
+                    style={{ background: "none", border: "none", color: T.red, cursor: "pointer", fontSize: 12, padding: "2px 6px" }}>x</button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Invite form */}
+          {isAdmin && (<>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8, fontFamily: "'DM Mono', monospace" }}>Invite Member</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleInvite()}
+                placeholder="colleague@company.com"
+                style={{ flex: 1, padding: "7px 12px", background: T.navy3, border: `1px solid ${T.border}`, borderRadius: 4, color: T.cream, fontSize: 12, fontFamily: "'DM Mono', monospace", outline: "none" }} />
+              <select value={inviteRole} onChange={e => setInviteRole(e.target.value)}
+                style={{ background: T.navy3, border: `1px solid ${T.border}`, borderRadius: 4, padding: "7px 8px", color: T.cream, fontSize: 11, fontFamily: "'DM Mono', monospace", outline: "none" }}>
+                <option value="member">member</option>
+                <option value="admin">admin</option>
+              </select>
+              <button onClick={handleInvite} disabled={inviting}
+                style={{ background: T.gold, color: T.navy, border: "none", borderRadius: 4, padding: "7px 16px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Mono', monospace" }}>
+                {inviting ? "..." : "Invite"}
+              </button>
+            </div>
+
+            {/* Pending invites */}
+            {invites.length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8, fontFamily: "'DM Mono', monospace" }}>Pending Invites</div>
+                {invites.map(inv => (
+                  <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${T.navy3}`, fontSize: 11, fontFamily: "'DM Mono', monospace" }}>
+                    <span style={{ flex: 1, color: T.cream2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inv.email}</span>
+                    <span style={{ color: T.muted, fontSize: 9 }}>{inv.role}</span>
+                    <button onClick={() => copyInviteLink(inv.token)}
+                      style={{ background: T.navy3, border: `1px solid ${T.border}`, borderRadius: 3, padding: "2px 10px", color: copiedToken === inv.token ? T.green : T.gold, fontSize: 9, cursor: "pointer", fontFamily: "'DM Mono', monospace" }}>
+                      {copiedToken === inv.token ? "Copied!" : "Copy Link"}
+                    </button>
+                    <button onClick={() => revokeInvite(inv.id)}
+                      style={{ background: "none", border: "none", color: T.red, cursor: "pointer", fontSize: 11 }}>x</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>)}
+        </>)}
+
+        {/* ── Activity Tab ── */}
+        {settingsTab === "activity" && (<>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12, fontFamily: "'DM Mono', monospace" }}>Activity Feed</div>
+          <div style={{ maxHeight: 420, overflowY: "auto" }}>
+            {activity.map(a => (
+              <div key={a.id} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: `1px solid ${T.navy3}` }}>
+                <div style={{ width: 24, height: 24, borderRadius: "50%", background: T.navy3, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: T.cream, fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>
+                  {(a.user_name || "?")[0].toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: T.cream, fontFamily: "'DM Mono', monospace" }}>
+                    <span style={{ fontWeight: 600 }}>{a.user_name}</span>
+                    <span style={{ color: T.muted }}> {actionLabels[a.action] || a.action}</span>
+                    {a.target_type && a.details && (
+                      <span style={{ color: T.muted2 }}> — {a.details.company || a.details.email || a.details.body?.slice(0, 40) || ""}</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 9, color: T.muted, fontFamily: "'DM Mono', monospace", marginTop: 2 }}>{a.created_at?.replace("T", " ").split(".")[0]}</div>
+                </div>
+              </div>
+            ))}
+            {activity.length === 0 && <div style={{ textAlign: "center", color: T.muted, fontSize: 11, padding: 20 }}>No activity yet</div>}
+          </div>
+        </>)}
+
+        {/* ── Usage Tab ── */}
+        {settingsTab === "usage" && (<>
+          {usageData ? (<>
+            {/* Summary stats */}
+            <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+              <div style={{ flex: 1, background: T.navy3, borderRadius: 8, padding: 12, textAlign: "center" }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: T.gold, fontFamily: "'Playfair Display', serif" }}>{usageData.total}</div>
+                <div style={{ fontSize: 9, color: T.muted, fontFamily: "'DM Mono', monospace" }}>Total this month</div>
+              </div>
+              <div style={{ flex: 1, background: T.navy3, borderRadius: 8, padding: 12, textAlign: "center" }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: T.cream, fontFamily: "'Playfair Display', serif" }}>{usageData.by_user?.length || 0}</div>
+                <div style={{ fontSize: 9, color: T.muted, fontFamily: "'DM Mono', monospace" }}>Active users</div>
+              </div>
+              <div style={{ flex: 1, background: T.navy3, borderRadius: 8, padding: 12, textAlign: "center" }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: T.cream, fontFamily: "'Playfair Display', serif" }}>{Object.keys(usageData.by_action || {}).length}</div>
+                <div style={{ fontSize: 9, color: T.muted, fontFamily: "'DM Mono', monospace" }}>Action types</div>
+              </div>
+            </div>
+
+            {/* Daily trend SVG */}
+            {usageData.by_day?.length > 0 && (() => {
+              const days = usageData.by_day;
+              const maxC = Math.max(...days.map(d => d.count), 1);
+              const w = 500, h = 100, pad = 20;
+              const barW = Math.max(6, (w - pad * 2) / days.length - 2);
+              return (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8, fontFamily: "'DM Mono', monospace" }}>Daily Trend</div>
+                  <svg width="100%" viewBox={`0 0 ${w} ${h + 20}`} style={{ display: "block" }}>
+                    {days.map((d, i) => {
+                      const barH = (d.count / maxC) * h;
+                      const x = pad + i * ((w - pad * 2) / days.length);
+                      return (
+                        <g key={i}>
+                          <rect x={x} y={h - barH} width={barW} height={barH} fill={T.gold} opacity="0.8" rx="2" />
+                          {days.length <= 15 && <text x={x + barW / 2} y={h + 14} textAnchor="middle" fill={T.muted} fontSize="7" fontFamily="'DM Mono', monospace">{d.date.slice(5)}</text>}
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              );
+            })()}
+
+            {/* Per-user table */}
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8, fontFamily: "'DM Mono', monospace" }}>By User</div>
+            <div style={{ marginBottom: 16 }}>
+              {(usageData.by_user || []).map(u => (
+                <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: `1px solid ${T.navy3}` }}>
+                  <div style={{ flex: 1, fontSize: 11, color: T.cream, fontFamily: "'DM Mono', monospace" }}>{u.name || u.email}</div>
+                  <span style={{ fontSize: 10, color: T.muted, fontFamily: "'DM Mono', monospace" }}>{u.role}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: T.gold, fontFamily: "'DM Mono', monospace", minWidth: 30, textAlign: "right" }}>{u.count}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* By action donut */}
+            {Object.keys(usageData.by_action || {}).length > 0 && (() => {
+              const entries = Object.entries(usageData.by_action).sort((a, b) => b[1] - a[1]);
+              const total = entries.reduce((s, [, v]) => s + v, 0);
+              const colors = [T.gold, T.blue, T.green, T.amber, T.purple, T.red, T.cream2, T.muted];
+              return (
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8, fontFamily: "'DM Mono', monospace" }}>By Action</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {entries.map(([action, count], i) => (
+                      <div key={action} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, fontFamily: "'DM Mono', monospace" }}>
+                        <div style={{ width: 8, height: 8, borderRadius: 2, background: colors[i % colors.length] }} />
+                        <span style={{ color: T.cream2 }}>{actionLabels[action] || action}</span>
+                        <span style={{ color: T.muted }}>{count} ({(count / total * 100).toFixed(0)}%)</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          </>) : (
+            <div style={{ textAlign: "center", color: T.muted, fontSize: 11, padding: 20 }}>Loading usage data...</div>
+          )}
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+
 export default function App() {
+  // ── Auth state ──────────────────────────────────────────────────────────────
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   // ── Existing UI state ────────────────────────────────────────────────────────
   const [tab, setTab]             = useState("dashboard");
   const [company, setCompany]     = useState(COMPANIES[0]);
@@ -686,6 +1374,8 @@ export default function App() {
   const [exposure, setExposure]             = useState(null);
   const [workflowVtab, setWorkflowVtab]    = useState("board");
   const [newReviewName, setNewReviewName]   = useState("");
+  const [selectedReview, setSelectedReview] = useState(null);
+  const [teamMembers, setTeamMembers]       = useState([]);
 
   // ── Error state ──────────────────────────────────────────────────────────────
   const [apiErrors, setApiErrors] = useState({});
@@ -712,6 +1402,53 @@ export default function App() {
   const [edgarPipelineId, setEdgarPipelineId] = useState(null);
   const [edgarRunStatus,  setEdgarRunStatus]  = useState(null); // null|running|complete|failed
 
+  // ── Auth: validate token on mount ──────────────────────────────────────────
+  useEffect(() => {
+    const token = localStorage.getItem("galleon_token");
+    if (!token) { setAuthLoading(false); return; }
+    apiFetch("/auth/me").then(data => {
+      if (data && data.id) setCurrentUser(data);
+      else localStorage.removeItem("galleon_token");
+      setAuthLoading(false);
+    });
+    const handleLogout = () => { setCurrentUser(null); setAuthLoading(false); };
+    window.addEventListener("galleon_logout", handleLogout);
+    return () => window.removeEventListener("galleon_logout", handleLogout);
+  }, []);
+
+  // ── Invite token state ────────────────────────────────────────────────────
+  const [inviteToken, setInviteToken] = useState(null);
+
+  // Handle Google OAuth callback + invite token
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const token = params.get("token");
+    if (token && !currentUser) {
+      setInviteToken(token);
+      return;
+    }
+    if (code && !currentUser) {
+      fetch(`${API_BASE}/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      }).then(r => r.json()).then(data => {
+        if (data.token) {
+          localStorage.setItem("galleon_token", data.token);
+          setCurrentUser(data.user);
+          window.history.replaceState({}, "", window.location.pathname);
+        }
+      }).catch(() => {});
+    }
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem("galleon_token");
+    setCurrentUser(null);
+    setSettingsOpen(false);
+  };
+
   // ── Existing animations ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!running) return;
@@ -736,6 +1473,10 @@ export default function App() {
     });
   };
   const refreshAll = () => {
+    // Refresh user/usage data
+    if (localStorage.getItem("galleon_token")) {
+      apiFetch("/auth/me").then(d => { if (d && d.id) setCurrentUser(d); });
+    }
     fetchWithError("/health", setApiStatus, "health");
     fetchWithError("/companies", setApiCompanies, "companies");
     fetchWithError("/documents", setApiDocuments, "documents");
@@ -753,6 +1494,7 @@ export default function App() {
     apiFetch("/monitor/status").then(d => { if (d) setMonitorStatus(d); });
     apiFetch("/workflow/reviews").then(d => { if (d) setDealReviews(d); });
     apiFetch("/workflow/exposure").then(d => { if (d) setExposure(d); });
+    apiFetch("/team/members").then(d => { if (d) setTeamMembers(d); });
     // Load extracted fields from most recent completed pipeline
     apiFetch("/debug/pipelines").then(d => {
       if (!d) return;
@@ -2651,13 +3393,18 @@ export default function App() {
                     </span>
                   </div>
                   {reviews.filter(r => r.status===status).map(r => (
-                    <div key={r.id} style={{ background:T.navy3, border:`1px solid ${T.border}`, borderRadius:6, padding:"10px 12px", marginBottom:8, borderLeft:`3px solid ${prioColors[r.priority]||T.muted}` }}>
-                      <div style={{ fontSize:11, fontWeight:600, color:T.cream, marginBottom:4 }}>{r.company_name}</div>
+                    <div key={r.id} onClick={() => setSelectedReview(r)} style={{ background:T.navy3, border:`1px solid ${T.border}`, borderRadius:6, padding:"10px 12px", marginBottom:8, borderLeft:`3px solid ${prioColors[r.priority]||T.muted}`, cursor:"pointer" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                        <div style={{ fontSize:11, fontWeight:600, color:T.cream }}>{r.company_name}</div>
+                        {(r.comment_count > 0) && (
+                          <span style={{ background:`${T.blue}30`, color:T.blue, borderRadius:8, padding:"1px 6px", fontSize:8, fontWeight:700, fontFamily:"'DM Mono', monospace" }}>{r.comment_count}</span>
+                        )}
+                      </div>
                       {r.assignee && <div style={{ fontSize:9, color:T.muted, marginBottom:4 }}>→ {r.assignee}</div>}
                       {r.notes && <div style={{ fontSize:9, color:T.muted2, marginBottom:6 }}>{r.notes.length>50?r.notes.slice(0,50)+"…":r.notes}</div>}
                       <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
                         {statusCols.filter(s => s!==status).map(s => (
-                          <button key={s} onClick={() => moveReview(r.id, s)}
+                          <button key={s} onClick={(e) => { e.stopPropagation(); moveReview(r.id, s); }}
                             style={{ background:T.navy2, border:`1px solid ${T.border}`, borderRadius:3, padding:"2px 8px", color:statusColors[s], fontSize:8, cursor:"pointer", fontFamily:"'DM Mono', monospace" }}>
                             → {statusLabels[s]}
                           </button>
@@ -2735,6 +3482,21 @@ export default function App() {
 
   const apiOnline = apiStatus?.status === "ok";
 
+  // ── Auth gate ──────────────────────────────────────────────────────────────
+  if (authLoading) {
+    return (
+      <div style={{ background: T.navy, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ color: T.muted, fontFamily: "'DM Mono', monospace", fontSize: 13 }}>Loading...</div>
+      </div>
+    );
+  }
+  if (inviteToken && !currentUser) {
+    return <InviteAcceptScreen token={inviteToken} onAccepted={(user) => { setCurrentUser(user); setInviteToken(null); }} />;
+  }
+  if (!currentUser) {
+    return <AuthScreen onLogin={(user) => { setCurrentUser(user); }} />;
+  }
+
   return (
     <div style={S.app}>
       <style>{`
@@ -2804,6 +3566,15 @@ export default function App() {
             </div>
           )}
         </div>
+        {/* Usage indicator */}
+        {currentUser?.usage && !currentUser.usage.unlimited && (
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <div style={{ width:60, height:4, background:T.navy3, borderRadius:2, overflow:"hidden" }}>
+              <div style={{ height:"100%", width:`${Math.min(100, ((currentUser.usage.used||0) / (currentUser.usage.limit||25)) * 100)}%`, background: ((currentUser.usage.used||0) / (currentUser.usage.limit||25)) > 0.9 ? T.red : ((currentUser.usage.used||0) / (currentUser.usage.limit||25)) > 0.7 ? T.amber : T.green, borderRadius:2 }}/>
+            </div>
+            <span style={{ fontSize:9, color:T.muted, fontFamily:"'DM Mono', monospace" }}>{currentUser.usage.used||0}/{currentUser.usage.limit||25}</span>
+          </div>
+        )}
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <div style={{ width:7, height:7, borderRadius:"50%", background: apiStatus === null ? T.amber : apiOnline ? T.green : T.red, boxShadow:`0 0 7px ${apiStatus === null ? T.amber : apiOnline ? T.green : T.red}` }}/>
           <span style={{ fontSize:10, color:T.muted, fontFamily:"'DM Mono', monospace", letterSpacing:"0.1em" }}>
@@ -2816,6 +3587,12 @@ export default function App() {
               <span style={{ fontSize:10, color:T.muted, fontFamily:"'DM Mono', monospace", letterSpacing:"0.1em" }}>DB</span>
             </>
           )}
+        </div>
+        {/* User avatar / settings */}
+        <div onClick={() => setSettingsOpen(true)} style={{ cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+          <div style={{ width:28, height:28, borderRadius:"50%", background:T.gold, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color:T.navy, fontFamily:"'DM Mono', monospace" }}>
+            {(currentUser?.name || currentUser?.email || "U")[0].toUpperCase()}
+          </div>
         </div>
       </div>
 
@@ -2852,6 +3629,25 @@ export default function App() {
         onUpload={(companyName) => { setTab("pipeline"); }}
         onSelectCompany={(co) => { setTab("profiles"); }}
       />
+
+      {/* Settings / Billing modal */}
+      {settingsOpen && (
+        <SettingsPanel user={currentUser} onClose={() => setSettingsOpen(false)} onLogout={handleLogout} />
+      )}
+
+      {/* Deal Review Detail modal */}
+      {selectedReview && (
+        <DealReviewDetail
+          review={selectedReview}
+          teamMembers={teamMembers}
+          onClose={() => setSelectedReview(null)}
+          onUpdate={(updated) => {
+            setDealReviews(prev => (prev || []).map(r => r.id === updated.id ? updated : r));
+            setSelectedReview(updated);
+          }}
+          addToast={addToast}
+        />
+      )}
     </div>
   );
 }

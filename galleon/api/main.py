@@ -20,16 +20,35 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from . import db
 from . import sqlite_store
+from .auth import (
+    check_usage_limit,
+    create_access_token,
+    exchange_google_code,
+    get_current_user,
+    get_current_user_optional,
+    get_google_auth_url,
+    get_usage_info,
+    hash_password,
+    verify_password,
+)
 from .models import (
+    ActivityOut,
     AssistantChatIn,
     AssistantChatOut,
+    AuthTokenOut,
     BdcSummary,
     BenchmarkSummary,
+    BillingUsageOut,
+    CheckoutIn,
+    CheckoutOut,
+    CommentCreate,
+    CommentOut,
     CompanyCreate,
     CompanyOut,
     CompanySearchResult,
@@ -43,6 +62,7 @@ from .models import (
     CrossRefHolder,
     CrossRefStats,
     CompanyTimeline,
+    DailyUsageStat,
     DealReview,
     DealReviewCreate,
     DealReviewUpdate,
@@ -55,8 +75,13 @@ from .models import (
     FdicInstitutionOut,
     FieldValueOut,
     FilingAlert,
+    GoogleAuthIn,
     GroundTruthOut,
     HealthOut,
+    InviteAcceptIn,
+    InviteCreate,
+    InviteOut,
+    LoginIn,
     MonitorStatus,
     MultiSourceSearchOut,
     OpenCorpCompanyOut,
@@ -64,12 +89,19 @@ from .models import (
     PipelineOut,
     PipelineStepOut,
     RecipientProfileOut,
+    RegisterIn,
+    RoleUpdate,
     RuleOut,
     SbaLoanOut,
+    TeamMemberOut,
     TemporalSnapshot,
     TemporalStats,
     UccFilingOut,
     UsaSpendingAwardOut,
+    UsageAnalyticsOut,
+    UsageInfo,
+    UserMeOut,
+    UserUsageStat,
 )
 
 # ── Path setup ────────────────────────────────────────────────────────────────
@@ -466,6 +498,284 @@ def health():
     )
 
 
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+@app.post("/auth/register", response_model=AuthTokenOut, tags=["auth"])
+def auth_register(body: RegisterIn):
+    """Create a new user + org, return JWT."""
+    existing = sqlite_store.get_user_by_email(body.email)
+    if existing:
+        raise HTTPException(status_code=409, detail="Email already registered")
+    org_id = str(uuid.uuid4())
+    user_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + "Z"
+    sqlite_store.save_org({
+        "id": org_id, "name": body.name or body.email.split("@")[0],
+        "plan": "free", "seats": 1, "created_at": now,
+    })
+    sqlite_store.save_user({
+        "id": user_id, "email": body.email, "password_hash": hash_password(body.password),
+        "name": body.name, "org_id": org_id, "role": "owner", "created_at": now, "last_login": now,
+    })
+    try:
+        sqlite_store.log_activity(org_id, user_id, body.name or body.email, "register", "user", user_id)
+    except Exception:
+        pass
+    token = create_access_token(user_id, org_id)
+    return AuthTokenOut(token=token, user={"id": user_id, "email": body.email, "name": body.name, "role": "owner"})
+
+
+@app.post("/auth/login", response_model=AuthTokenOut, tags=["auth"])
+def auth_login(body: LoginIn):
+    """Login with email + password, return JWT."""
+    user = sqlite_store.get_user_by_email(body.email)
+    if not user or not user.get("password_hash"):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    now = datetime.utcnow().isoformat() + "Z"
+    sqlite_store.update_user(user["id"], {"last_login": now})
+    try:
+        sqlite_store.log_activity(user["org_id"], user["id"], user.get("name") or user["email"], "login", "user", user["id"])
+    except Exception:
+        pass
+    token = create_access_token(user["id"], user["org_id"])
+    return AuthTokenOut(token=token, user={
+        "id": user["id"], "email": user["email"], "name": user.get("name"), "role": user.get("role", "member"),
+    })
+
+
+@app.get("/auth/me", response_model=UserMeOut, tags=["auth"])
+def auth_me(current_user: dict = Depends(get_current_user)):
+    """Return current user + org + usage."""
+    user = sqlite_store.get_user_by_id(current_user["user_id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    org = sqlite_store.get_org(user["org_id"]) or {}
+    monthly = sqlite_store.get_monthly_usage(user["org_id"])
+    usage = get_usage_info(org.get("plan", "free"), org.get("seats", 1), monthly)
+    return UserMeOut(
+        id=user["id"], email=user["email"], name=user.get("name"), role=user.get("role", "member"),
+        org={"id": org.get("id"), "name": org.get("name"), "plan": org.get("plan", "free"),
+             "seats": org.get("seats", 1), "seats_used": sqlite_store.get_org_seats_used(user["org_id"])},
+        usage=UsageInfo(**usage),
+    )
+
+
+@app.post("/auth/google", response_model=AuthTokenOut, tags=["auth"])
+async def auth_google(body: GoogleAuthIn):
+    """Exchange Google auth code for JWT."""
+    profile = await exchange_google_code(body.code)
+    if not profile or not profile.get("email"):
+        raise HTTPException(status_code=400, detail="Google authentication failed")
+    now = datetime.utcnow().isoformat() + "Z"
+    # Check if user exists by google_id or email
+    user = sqlite_store.get_user_by_google_id(profile["google_id"])
+    if not user:
+        user = sqlite_store.get_user_by_email(profile["email"])
+    if user:
+        sqlite_store.update_user(user["id"], {"last_login": now, "google_id": profile["google_id"]})
+        token = create_access_token(user["id"], user["org_id"])
+        return AuthTokenOut(token=token, user={
+            "id": user["id"], "email": user["email"], "name": user.get("name"), "role": user.get("role"),
+        })
+    # New user — create org + user
+    org_id = str(uuid.uuid4())
+    user_id = str(uuid.uuid4())
+    sqlite_store.save_org({
+        "id": org_id, "name": profile.get("name", profile["email"].split("@")[0]),
+        "plan": "free", "seats": 1, "created_at": now,
+    })
+    sqlite_store.save_user({
+        "id": user_id, "email": profile["email"], "name": profile.get("name"),
+        "org_id": org_id, "role": "owner", "google_id": profile["google_id"],
+        "created_at": now, "last_login": now,
+    })
+    token = create_access_token(user_id, org_id)
+    return AuthTokenOut(token=token, user={
+        "id": user_id, "email": profile["email"], "name": profile.get("name"), "role": "owner",
+    })
+
+
+@app.get("/auth/google/url", tags=["auth"])
+def auth_google_url():
+    """Return Google OAuth redirect URL."""
+    url = get_google_auth_url()
+    if not url:
+        raise HTTPException(status_code=501, detail="Google OAuth not configured")
+    return {"url": url}
+
+
+# ── Billing / Stripe ─────────────────────────────────────────────────────────
+
+@app.post("/billing/checkout", response_model=CheckoutOut, tags=["billing"])
+def billing_checkout(body: CheckoutIn, current_user: dict = Depends(get_current_user)):
+    """Create Stripe Checkout Session, return redirect URL."""
+    try:
+        import stripe
+    except ImportError:
+        raise HTTPException(status_code=501, detail="Stripe not installed")
+    stripe_key = os.getenv("STRIPE_SECRET_KEY")
+    if not stripe_key:
+        raise HTTPException(status_code=501, detail="Stripe not configured")
+    stripe.api_key = stripe_key
+    price_id = os.getenv("STRIPE_PRO_PRICE_ID")
+    if not price_id:
+        raise HTTPException(status_code=501, detail="Stripe price ID not configured")
+    org = sqlite_store.get_org(current_user["org_id"])
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    # Create or reuse Stripe customer
+    customer_id = org.get("stripe_customer_id")
+    if not customer_id:
+        user = sqlite_store.get_user_by_id(current_user["user_id"])
+        customer = stripe.Customer.create(email=user["email"] if user else "", metadata={"org_id": org["id"]})
+        customer_id = customer.id
+        sqlite_store.update_org(org["id"], {"stripe_customer_id": customer_id})
+    session = stripe.checkout.Session.create(
+        customer=customer_id,
+        mode="subscription",
+        line_items=[{"price": price_id, "quantity": body.seats}],
+        success_url=os.getenv("STRIPE_SUCCESS_URL", "http://localhost:5173/?billing=success"),
+        cancel_url=os.getenv("STRIPE_CANCEL_URL", "http://localhost:5173/?billing=cancel"),
+        metadata={"org_id": org["id"], "plan": body.plan, "seats": str(body.seats)},
+    )
+    return CheckoutOut(url=session.url)
+
+
+@app.post("/billing/webhook", tags=["billing"])
+async def billing_webhook(request: Request):
+    """Handle Stripe webhook events."""
+    try:
+        import stripe
+    except ImportError:
+        raise HTTPException(status_code=501, detail="Stripe not installed")
+    stripe_key = os.getenv("STRIPE_SECRET_KEY")
+    webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+    if not stripe_key or not webhook_secret:
+        raise HTTPException(status_code=501, detail="Stripe not configured")
+    stripe.api_key = stripe_key
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, webhook_secret)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+    etype = event["type"]
+    data = event["data"]["object"]
+    if etype == "checkout.session.completed":
+        org_id = data.get("metadata", {}).get("org_id")
+        plan = data.get("metadata", {}).get("plan", "pro")
+        seats = int(data.get("metadata", {}).get("seats", "1"))
+        if org_id:
+            sqlite_store.update_org(org_id, {
+                "plan": plan, "seats": seats,
+                "stripe_customer_id": data.get("customer"),
+                "stripe_subscription_id": data.get("subscription"),
+            })
+    elif etype == "customer.subscription.updated":
+        # Update seats if changed
+        sub_id = data.get("id")
+        org = None
+        # Find org by subscription ID
+        conn = sqlite_store._get_conn()
+        row = conn.execute("SELECT * FROM organizations WHERE stripe_subscription_id = ?", (sub_id,)).fetchone()
+        if row:
+            items = data.get("items", {}).get("data", [])
+            new_qty = items[0]["quantity"] if items else None
+            if new_qty:
+                sqlite_store.update_org(row["id"], {"seats": new_qty})
+    elif etype == "customer.subscription.deleted":
+        sub_id = data.get("id")
+        conn = sqlite_store._get_conn()
+        row = conn.execute("SELECT * FROM organizations WHERE stripe_subscription_id = ?", (sub_id,)).fetchone()
+        if row:
+            sqlite_store.update_org(row["id"], {"plan": "free", "seats": 1, "stripe_subscription_id": None})
+    elif etype == "invoice.payment_failed":
+        customer_id = data.get("customer")
+        conn = sqlite_store._get_conn()
+        row = conn.execute("SELECT * FROM organizations WHERE stripe_customer_id = ?", (customer_id,)).fetchone()
+        if row:
+            print(f"[billing] Payment failed for org {row['id']}")
+    return {"status": "ok"}
+
+
+@app.get("/billing/portal", tags=["billing"])
+def billing_portal(current_user: dict = Depends(get_current_user)):
+    """Return Stripe Customer Portal URL."""
+    try:
+        import stripe
+    except ImportError:
+        raise HTTPException(status_code=501, detail="Stripe not installed")
+    stripe_key = os.getenv("STRIPE_SECRET_KEY")
+    if not stripe_key:
+        raise HTTPException(status_code=501, detail="Stripe not configured")
+    stripe.api_key = stripe_key
+    org = sqlite_store.get_org(current_user["org_id"])
+    if not org or not org.get("stripe_customer_id"):
+        raise HTTPException(status_code=400, detail="No billing account found")
+    session = stripe.billing_portal.Session.create(
+        customer=org["stripe_customer_id"],
+        return_url=os.getenv("STRIPE_PORTAL_RETURN_URL", "http://localhost:5173/"),
+    )
+    return {"url": session.url}
+
+
+@app.get("/billing/usage", response_model=BillingUsageOut, tags=["billing"])
+def billing_usage(current_user: dict = Depends(get_current_user)):
+    """Return current month usage vs limits."""
+    org = sqlite_store.get_org(current_user["org_id"]) or {}
+    monthly = sqlite_store.get_monthly_usage(current_user["org_id"])
+    plan = org.get("plan", "free")
+    seats = org.get("seats", 1)
+    usage = get_usage_info(plan, seats, monthly)
+    return BillingUsageOut(
+        plan=plan, seats=seats,
+        seats_used=sqlite_store.get_org_seats_used(current_user["org_id"]),
+        usage=UsageInfo(**usage),
+    )
+
+
+# ── Usage-limit helper ───────────────────────────────────────────────────────
+
+def _check_and_track_usage(current_user: dict, action: str) -> None:
+    """Check usage limits and increment counter. Raises 403 if exceeded."""
+    org = sqlite_store.get_org(current_user["org_id"]) or {}
+    plan = org.get("plan", "free")
+    seats = org.get("seats", 1)
+    monthly = sqlite_store.get_monthly_usage(current_user["org_id"])
+    if not check_usage_limit(plan, seats, monthly):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Monthly generation limit reached ({monthly}/{seats * (500 if plan == 'pro' else 25)}). Upgrade your plan for more.",
+        )
+    sqlite_store.increment_usage(current_user["org_id"], current_user["user_id"], action)
+    _log_user_activity(current_user, action, "usage", "")
+
+
+def _log_user_activity(current_user: dict, action: str, target_type: str = "", target_id: str = "", details: dict = None) -> None:
+    """Log an activity entry for the current user's org."""
+    try:
+        user = sqlite_store.get_user_by_id(current_user["user_id"]) if current_user else None
+        name = (user.get("name") or user.get("email", "")) if user else ""
+        sqlite_store.log_activity(
+            current_user["org_id"], current_user["user_id"], name,
+            action, target_type, target_id, details,
+        )
+    except Exception:
+        pass
+
+
+def _require_role(current_user: dict, allowed_roles: list) -> dict:
+    """Ensure user has one of the allowed roles. Returns user DB record."""
+    user = sqlite_store.get_user_by_id(current_user["user_id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.get("role") not in allowed_roles:
+        raise HTTPException(status_code=403, detail=f"Requires role: {', '.join(allowed_roles)}")
+    return user
+
+
 # ── Companies ─────────────────────────────────────────────────────────────────
 
 @app.get("/companies", response_model=List[CompanySummary], tags=["companies"])
@@ -705,12 +1015,17 @@ async def upload_document(
     file: UploadFile = File(...),
     company_name: Optional[str] = Form(default=None),
     company_id: Optional[str] = Form(default=None),
+    current_user: Optional[dict] = Depends(get_current_user_optional),
 ):
     """
     Upload a PDF. Saves to data/uploads/, resolves company entity,
     creates DB records, starts background extraction.
     Returns {pipeline_id, document_id, status: "running"} immediately.
     """
+    # Check usage limits if authenticated
+    if current_user:
+        _check_and_track_usage(current_user, "upload")
+
     # Save file
     safe_name = Path(file.filename).name
     stored_name = f"{uuid.uuid4()}_{safe_name}"
@@ -809,6 +1124,7 @@ def run_pipeline(
     background_tasks: BackgroundTasks,
     company_id: str,
     document_ids: List[str],
+    current_user: Optional[dict] = Depends(get_current_user_optional),
 ):
     """
     Trigger a pipeline run for an existing company + document set.
@@ -1349,11 +1665,15 @@ def multi_source_search(q: str = "", sources: Optional[str] = None, limit: int =
 # ── Assistant ──────────────────────────────────────────────────────────────────
 
 @app.post("/assistant/chat", response_model=AssistantChatOut, tags=["assistant"])
-def assistant_chat(body: AssistantChatIn):
+def assistant_chat(body: AssistantChatIn, current_user: Optional[dict] = Depends(get_current_user_optional)):
     """
     Send a message to the Galleon AI assistant.
     Returns AI response with optional action and company matches.
     """
+    # Track usage if authenticated
+    if current_user:
+        _check_and_track_usage(current_user, "chat")
+
     try:
         from .assistant import chat  # type: ignore
         result = chat(
@@ -1867,11 +2187,19 @@ def list_deal_reviews():
     """List all deal reviews."""
     if not _deal_reviews:
         _seed_deal_reviews()
-    return [DealReview(**r) for r in sorted(_deal_reviews.values(), key=lambda r: r["created_at"], reverse=True)]
+    reviews = sorted(_deal_reviews.values(), key=lambda r: r["created_at"], reverse=True)
+    # Attach comment counts
+    try:
+        counts = sqlite_store.count_comments_by_reviews([r["id"] for r in reviews])
+        for r in reviews:
+            r["comment_count"] = counts.get(r["id"], 0)
+    except Exception:
+        pass
+    return [DealReview(**r) for r in reviews]
 
 
 @app.post("/workflow/reviews", response_model=DealReview, status_code=201, tags=["workflow"])
-def create_deal_review(body: DealReviewCreate):
+def create_deal_review(body: DealReviewCreate, current_user: Optional[dict] = Depends(get_current_user_optional)):
     """Create a new deal review."""
     now = datetime.utcnow().isoformat() + "Z"
     review = {
@@ -1880,8 +2208,11 @@ def create_deal_review(body: DealReviewCreate):
         "company_id": body.company_id,
         "status": "pending",
         "assignee": body.assignee,
+        "assignee_id": body.assignee_id,
         "notes": body.notes,
         "priority": body.priority,
+        "created_by": current_user["user_id"] if current_user else None,
+        "comment_count": 0,
         "created_at": now,
         "updated_at": now,
     }
@@ -1890,29 +2221,268 @@ def create_deal_review(body: DealReviewCreate):
         sqlite_store.save_deal_review(review)
     except Exception:
         pass
+    if current_user:
+        _log_user_activity(current_user, "create_review", "review", review["id"], {"company": body.company_name})
     return DealReview(**review)
 
 
 @app.patch("/workflow/reviews/{review_id}", response_model=DealReview, tags=["workflow"])
-def update_deal_review(review_id: str, body: DealReviewUpdate):
+def update_deal_review(review_id: str, body: DealReviewUpdate, current_user: Optional[dict] = Depends(get_current_user_optional)):
     """Update a deal review (status, assignee, notes, priority)."""
     review = _deal_reviews.get(review_id)
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
+    changes = {}
     if body.status is not None:
+        changes["status"] = body.status
         review["status"] = body.status
     if body.assignee is not None:
         review["assignee"] = body.assignee
+    if body.assignee_id is not None:
+        review["assignee_id"] = body.assignee_id
     if body.notes is not None:
         review["notes"] = body.notes
     if body.priority is not None:
+        changes["priority"] = body.priority
         review["priority"] = body.priority
     review["updated_at"] = datetime.utcnow().isoformat() + "Z"
     try:
         sqlite_store.save_deal_review(review)
     except Exception:
         pass
+    if current_user and changes:
+        _log_user_activity(current_user, "update_review", "review", review_id, changes)
     return DealReview(**review)
+
+
+# ── Comments on Reviews ──────────────────────────────────────────────────────
+
+@app.get("/workflow/reviews/{review_id}/comments", response_model=List[CommentOut], tags=["workflow"])
+def list_review_comments(review_id: str):
+    """List comments on a deal review."""
+    return [CommentOut(**c) for c in sqlite_store.list_comments_for_review(review_id)]
+
+
+@app.post("/workflow/reviews/{review_id}/comments", response_model=CommentOut, status_code=201, tags=["workflow"])
+def post_review_comment(review_id: str, body: CommentCreate, current_user: dict = Depends(get_current_user)):
+    """Post a comment on a deal review."""
+    review = _deal_reviews.get(review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    user = sqlite_store.get_user_by_id(current_user["user_id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    now = datetime.utcnow().isoformat() + "Z"
+    comment = {
+        "id": str(uuid.uuid4()),
+        "review_id": review_id,
+        "user_id": current_user["user_id"],
+        "user_name": user.get("name") or user.get("email"),
+        "user_role": user.get("role", "member"),
+        "body": body.body,
+        "created_at": now,
+    }
+    sqlite_store.save_comment(comment)
+    _log_user_activity(current_user, "comment", "review", review_id, {"body": body.body[:100]})
+    return CommentOut(**comment)
+
+
+# ── Team Management ──────────────────────────────────────────────────────────
+
+@app.get("/team/members", response_model=List[TeamMemberOut], tags=["team"])
+def list_team_members(current_user: dict = Depends(get_current_user)):
+    """List all members in the current user's org."""
+    users = sqlite_store.list_org_users(current_user["org_id"])
+    # Get activity counts per user
+    activity_counts = {}
+    try:
+        activities = sqlite_store.list_org_activity(current_user["org_id"], limit=1000)
+        for a in activities:
+            uid = a.get("user_id", "")
+            activity_counts[uid] = activity_counts.get(uid, 0) + 1
+    except Exception:
+        pass
+    return [
+        TeamMemberOut(
+            id=u["id"], email=u["email"], name=u.get("name"),
+            role=u.get("role", "member"), last_login=u.get("last_login"),
+            activity_count=activity_counts.get(u["id"], 0),
+        )
+        for u in users
+    ]
+
+
+@app.patch("/team/members/{member_id}/role", response_model=TeamMemberOut, tags=["team"])
+def change_member_role(member_id: str, body: RoleUpdate, current_user: dict = Depends(get_current_user)):
+    """Change a team member's role (owner only)."""
+    actor = _require_role(current_user, ["owner"])
+    target = sqlite_store.get_user_by_id(member_id)
+    if not target or target["org_id"] != current_user["org_id"]:
+        raise HTTPException(status_code=404, detail="Member not found")
+    if target["id"] == actor["id"]:
+        raise HTTPException(status_code=400, detail="Cannot change your own role")
+    if body.role not in ("member", "admin", "owner"):
+        raise HTTPException(status_code=400, detail="Invalid role")
+    sqlite_store.update_user(member_id, {"role": body.role})
+    _log_user_activity(current_user, "change_role", "user", member_id, {"new_role": body.role})
+    target["role"] = body.role
+    return TeamMemberOut(id=target["id"], email=target["email"], name=target.get("name"), role=body.role, last_login=target.get("last_login"))
+
+
+@app.delete("/team/members/{member_id}", tags=["team"])
+def remove_member(member_id: str, current_user: dict = Depends(get_current_user)):
+    """Remove a team member (owner/admin only)."""
+    actor = _require_role(current_user, ["owner", "admin"])
+    target = sqlite_store.get_user_by_id(member_id)
+    if not target or target["org_id"] != current_user["org_id"]:
+        raise HTTPException(status_code=404, detail="Member not found")
+    if target["id"] == actor["id"]:
+        raise HTTPException(status_code=400, detail="Cannot remove yourself")
+    if target.get("role") == "owner":
+        raise HTTPException(status_code=403, detail="Cannot remove org owner")
+    # Remove user from org by clearing org_id
+    sqlite_store.update_user(member_id, {"org_id": None})
+    _log_user_activity(current_user, "remove_member", "user", member_id, {"email": target["email"]})
+    return {"ok": True}
+
+
+# ── Invites ──────────────────────────────────────────────────────────────────
+
+@app.post("/team/invites", response_model=InviteOut, status_code=201, tags=["team"])
+def create_invite(body: InviteCreate, current_user: dict = Depends(get_current_user)):
+    """Create an invite link for a new team member."""
+    actor = _require_role(current_user, ["owner", "admin"])
+    org = sqlite_store.get_org(current_user["org_id"])
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    # Check seat limit
+    seats_used = sqlite_store.get_org_seats_used(current_user["org_id"])
+    pending = sqlite_store.count_pending_invites(current_user["org_id"])
+    max_seats = org.get("seats", 1)
+    if seats_used + pending >= max_seats:
+        raise HTTPException(status_code=403, detail=f"Seat limit reached ({seats_used + pending}/{max_seats}). Upgrade to add more members.")
+    # Check if already invited
+    existing = sqlite_store.get_user_by_email(body.email)
+    if existing and existing.get("org_id") == current_user["org_id"]:
+        raise HTTPException(status_code=409, detail="User already in your organization")
+
+    import secrets
+    now = datetime.utcnow()
+    invite = {
+        "id": str(uuid.uuid4()),
+        "org_id": current_user["org_id"],
+        "email": body.email,
+        "role": body.role if body.role in ("member", "admin") else "member",
+        "invited_by": actor.get("name") or actor.get("email"),
+        "token": secrets.token_urlsafe(32),
+        "status": "pending",
+        "created_at": now.isoformat() + "Z",
+        "expires_at": (now + __import__("datetime").timedelta(hours=72)).isoformat() + "Z",
+    }
+    sqlite_store.save_invite(invite)
+    _log_user_activity(current_user, "invite_member", "invite", invite["id"], {"email": body.email})
+    return InviteOut(**invite)
+
+
+@app.get("/team/invites", response_model=List[InviteOut], tags=["team"])
+def list_invites(current_user: dict = Depends(get_current_user)):
+    """List pending invites for the org."""
+    _require_role(current_user, ["owner", "admin"])
+    invites = sqlite_store.list_org_invites(current_user["org_id"])
+    return [InviteOut(**inv) for inv in invites if inv.get("status") == "pending"]
+
+
+@app.delete("/team/invites/{invite_id}", tags=["team"])
+def revoke_invite(invite_id: str, current_user: dict = Depends(get_current_user)):
+    """Revoke a pending invite."""
+    _require_role(current_user, ["owner", "admin"])
+    sqlite_store.delete_invite(invite_id)
+    return {"ok": True}
+
+
+@app.post("/team/invites/accept", response_model=AuthTokenOut, tags=["team"])
+def accept_invite(body: InviteAcceptIn):
+    """Accept an invite — creates user account and joins org."""
+    invite = sqlite_store.get_invite_by_token(body.token)
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invalid or expired invite link")
+    if invite["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Invite already used or expired")
+    # Check expiry
+    if invite.get("expires_at"):
+        from datetime import datetime as _dt
+        try:
+            exp = _dt.fromisoformat(invite["expires_at"].replace("Z", "+00:00"))
+            if _dt.now(exp.tzinfo) > exp:
+                sqlite_store.update_invite(invite["id"], {"status": "expired"})
+                raise HTTPException(status_code=400, detail="Invite has expired")
+        except (ValueError, TypeError):
+            pass
+    # Create or link user
+    now = datetime.utcnow().isoformat() + "Z"
+    existing = sqlite_store.get_user_by_email(invite["email"])
+    if existing:
+        # Link existing user to org
+        sqlite_store.update_user(existing["id"], {"org_id": invite["org_id"], "role": invite.get("role", "member"), "last_login": now})
+        user_id = existing["id"]
+        user_name = existing.get("name")
+        user_email = existing["email"]
+    else:
+        if not body.password:
+            raise HTTPException(status_code=400, detail="Password required for new account")
+        user_id = str(uuid.uuid4())
+        user_email = invite["email"]
+        user_name = body.name or invite["email"].split("@")[0]
+        sqlite_store.save_user({
+            "id": user_id, "email": invite["email"], "password_hash": hash_password(body.password),
+            "name": user_name, "org_id": invite["org_id"], "role": invite.get("role", "member"),
+            "created_at": now, "last_login": now,
+        })
+    sqlite_store.update_invite(invite["id"], {"status": "accepted", "accepted_at": now})
+    try:
+        sqlite_store.log_activity(invite["org_id"], user_id, user_name or user_email, "join_team", "invite", invite["id"])
+    except Exception:
+        pass
+    token = create_access_token(user_id, invite["org_id"])
+    return AuthTokenOut(token=token, user={"id": user_id, "email": user_email, "name": user_name, "role": invite.get("role", "member")})
+
+
+# ── Activity Feed ────────────────────────────────────────────────────────────
+
+@app.get("/team/activity", response_model=List[ActivityOut], tags=["team"])
+def list_activity(limit: int = 50, offset: int = 0, current_user: dict = Depends(get_current_user)):
+    """Org-wide activity feed (owner/admin)."""
+    _require_role(current_user, ["owner", "admin"])
+    activities = sqlite_store.list_org_activity(current_user["org_id"], limit=min(limit, 200), offset=offset)
+    return [ActivityOut(**a) for a in activities]
+
+
+# ── Usage Analytics ──────────────────────────────────────────────────────────
+
+@app.get("/team/usage", response_model=UsageAnalyticsOut, tags=["team"])
+def get_team_usage(month: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Per-user + daily usage analytics for the org (owner/admin)."""
+    _require_role(current_user, ["owner", "admin"])
+    now = datetime.utcnow()
+    if month:
+        try:
+            year, mon = month.split("-")
+            month_start = datetime(int(year), int(mon), 1).isoformat() + "Z"
+        except (ValueError, TypeError):
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat() + "Z"
+    else:
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat() + "Z"
+        month = now.strftime("%Y-%m")
+    by_user = sqlite_store.get_usage_by_user(current_user["org_id"], month_start)
+    by_day = sqlite_store.get_usage_daily_trend(current_user["org_id"], month_start)
+    by_action = sqlite_store.get_usage_by_action(current_user["org_id"], month_start)
+    total = sum(u.get("count", 0) for u in by_user)
+    return UsageAnalyticsOut(
+        month=month, total=total,
+        by_user=[UserUsageStat(**u) for u in by_user],
+        by_day=[DailyUsageStat(**d) for d in by_day],
+        by_action=by_action,
+    )
 
 
 @app.get("/workflow/exposure", response_model=ExposureReport, tags=["workflow"])
