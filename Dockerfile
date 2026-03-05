@@ -10,6 +10,10 @@ RUN npm run build
 FROM python:3.11-slim
 WORKDIR /app
 
+# Install build deps for bcrypt/cryptography, then clean up
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libffi-dev && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install Python dependencies
 COPY galleon/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
