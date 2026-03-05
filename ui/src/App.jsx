@@ -661,7 +661,7 @@ function AuthScreen({ onLogin }) {
       localStorage.setItem("galleon_token", data.token);
       onLogin(data.user);
     } catch (err) {
-      setError("Network error — is the API running?");
+      setError(err.message || "Network error — is the API running?");
     }
     setLoading(false);
   };
