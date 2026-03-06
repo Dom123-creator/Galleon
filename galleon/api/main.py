@@ -13,10 +13,13 @@ Or:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import uuid
 from datetime import datetime
+
+logger = logging.getLogger("galleon.api")
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -127,6 +130,14 @@ _company_id_to_name: Dict[str, str] = {}
 
 VERSION = "1.0.0"
 
+# ── Logging ──────────────────────────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
 # ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
@@ -183,7 +194,7 @@ def startup_event():
     import threading
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     connected = db.is_connected()
-    print(f"[galleon] API v{VERSION} starting — DB connected: {connected}")
+    logger.info("API v%s starting — DB connected: %s", VERSION, connected)
 
     # Initialize SQLite persistence
     try:
@@ -192,22 +203,22 @@ def startup_event():
         saved_pipelines = sqlite_store.load_pipelines()
         if saved_pipelines:
             _pipelines.update(saved_pipelines)
-            print(f"[galleon] Loaded {len(saved_pipelines)} pipelines from SQLite")
+            logger.info("Loaded %s pipelines from SQLite", len(saved_pipelines))
         saved_reviews = sqlite_store.load_deal_reviews()
         if saved_reviews:
             _deal_reviews.update(saved_reviews)
-            print(f"[galleon] Loaded {len(saved_reviews)} deal reviews from SQLite")
+            logger.info("Loaded %s deal reviews from SQLite", len(saved_reviews))
     except Exception as exc:
-        print(f"[galleon] SQLite init failed (non-fatal): {exc}")
+        logger.warning("SQLite init failed (non-fatal): %s", exc)
 
     # Try loading cached BDC index first, then build if stale
     try:
         from bdc_index import is_stale, load_index  # type: ignore
         loaded = load_index()
         if loaded:
-            print("[galleon] BDC index loaded from cache")
+            logger.info("BDC index loaded from cache")
         if is_stale():
-            print("[galleon] BDC universe index is stale — triggering background build")
+            logger.info("BDC universe index is stale — triggering background build")
             pipeline_id = str(uuid.uuid4())
             _pipelines[pipeline_id] = {
                 "pipeline_id": pipeline_id,
@@ -226,14 +237,14 @@ def startup_event():
             )
             t.start()
     except Exception as exc:
-        print(f"[galleon] BDC index startup check failed: {exc}")
+        logger.warning("BDC index startup check failed: %s", exc)
 
     # Start EDGAR filing monitor
     try:
         from pipeline.edgar_monitor import start_monitor  # type: ignore
         start_monitor()
     except Exception as exc:
-        print(f"[galleon] EDGAR monitor startup failed: {exc}")
+        logger.warning("EDGAR monitor startup failed: %s", exc)
 
 
 # ── BDC Index Seed Helpers (used when DB is unavailable) ─────────────────────
@@ -707,11 +718,11 @@ async def billing_webhook(request: Request):
             # Verify org exists and customer matches (prevent org_id spoofing)
             org = sqlite_store.get_org(org_id)
             if not org:
-                print(f"[billing] Webhook for unknown org_id: {org_id}")
+                logger.warning("Webhook for unknown org_id: %s", org_id)
                 return {"status": "ignored"}
             customer_id = data.get("customer")
             if org.get("stripe_customer_id") and org["stripe_customer_id"] != customer_id:
-                print(f"[billing] Customer mismatch for org {org_id}: expected {org.get('stripe_customer_id')}, got {customer_id}")
+                logger.warning("Customer mismatch for org %s: expected %s, got %s", org_id, org.get('stripe_customer_id'), customer_id)
                 return {"status": "ignored"}
             # Clamp seats to plan limits
             seats = max(1, min(seats, 20))
@@ -743,7 +754,7 @@ async def billing_webhook(request: Request):
         conn = sqlite_store._get_conn()
         row = conn.execute("SELECT * FROM organizations WHERE stripe_customer_id = ?", (customer_id,)).fetchone()
         if row:
-            print(f"[billing] Payment failed for org {row['id']}")
+            logger.warning("Payment failed for org %s", row['id'])
     return {"status": "ok"}
 
 
@@ -1661,7 +1672,7 @@ def multi_source_search(q: str = "", sources: Optional[str] = None, limit: int =
             fdic_data = search_institutions(q.strip(), limit=limit)
             result.fdic = [FdicInstitutionOut(**r) for r in fdic_data]
         except Exception as exc:
-            print(f"[multi-search] FDIC failed: {exc}")
+            logger.warning("FDIC failed: %s", exc)
 
     if "usaspending" in selected:
         try:
@@ -1669,7 +1680,7 @@ def multi_source_search(q: str = "", sources: Optional[str] = None, limit: int =
             usa_data = search_awards(q.strip(), limit=limit)
             result.usaspending = [UsaSpendingAwardOut(**r) for r in usa_data]
         except Exception as exc:
-            print(f"[multi-search] USASpending failed: {exc}")
+            logger.warning("USASpending failed: %s", exc)
 
     if "opencorporates" in selected:
         try:
@@ -1677,7 +1688,7 @@ def multi_source_search(q: str = "", sources: Optional[str] = None, limit: int =
             oc_data = search_companies(q.strip(), limit=limit)
             result.opencorporates = [OpenCorpCompanyOut(**r) for r in oc_data]
         except Exception as exc:
-            print(f"[multi-search] OpenCorporates failed: {exc}")
+            logger.warning("OpenCorporates failed: %s", exc)
 
     if "ucc" in selected:
         try:
@@ -1685,7 +1696,7 @@ def multi_source_search(q: str = "", sources: Optional[str] = None, limit: int =
             ucc_data = search_ucc_filings(q.strip(), limit=limit)
             result.ucc = [UccFilingOut(**r) for r in ucc_data]
         except Exception as exc:
-            print(f"[multi-search] UCC failed: {exc}")
+            logger.warning("UCC failed: %s", exc)
 
     if "bdc" in selected:
         try:
@@ -1707,7 +1718,7 @@ def multi_source_search(q: str = "", sources: Optional[str] = None, limit: int =
                 for r in bdc_data
             ]
         except Exception as exc:
-            print(f"[multi-search] BDC failed: {exc}")
+            logger.warning("BDC failed: %s", exc)
 
     return result
 
@@ -1812,7 +1823,7 @@ def _run_extraction_background(
         except Exception:
             pass
     except Exception as exc:
-        print(f"[pipeline] Extraction failed for {pipeline_id}: {exc}")
+        logger.warning("Extraction failed for %s: %s", pipeline_id, exc)
         db.finish_pipeline(pipeline_id, {}, success=False)
         db.update_document_status(document_id, "failed")
         _pipelines[pipeline_id].update(
@@ -1838,7 +1849,7 @@ def _run_bdc_index_background(pipeline_id: str, max_bdcs: int = 25) -> None:
         except Exception:
             pass
     except Exception as exc:
-        print(f"[bdc_index] Build failed for {pipeline_id}: {exc}")
+        logger.warning("Build failed for %s: %s", pipeline_id, exc)
         _pipelines[pipeline_id].update({
             "status": "failed",
             "error": str(exc),
@@ -1877,7 +1888,7 @@ def _run_edgar_background(pipeline_id: str, live: bool) -> None:
         except Exception:
             pass
     except Exception as exc:
-        print(f"[edgar] Pull failed for {pipeline_id}: {exc}")
+        logger.warning("Pull failed for %s: %s", pipeline_id, exc)
         _pipelines[pipeline_id].update(
             {"status": "failed", "error": str(exc), "completed_at": datetime.utcnow().isoformat()}
         )
@@ -1915,7 +1926,7 @@ def _resolve_or_create_company(name: str) -> Optional[str]:
                         return str(row["id"])
             # For 0.70-0.89 we still create new, but could add review flag here
     except Exception as exc:
-        print(f"[entity] Resolver failed: {exc}")
+        logger.warning("Resolver failed: %s", exc)
 
     # Create new company (or generate in-memory ID if DB unavailable)
     db_id = db.upsert_company(name)
@@ -2128,9 +2139,9 @@ def build_temporal(background_tasks: BackgroundTasks, bdc_ticker: str = "ARCC", 
         try:
             from pipeline.temporal import build_temporal_index  # type: ignore
             count = build_temporal_index(cik, bdc_ticker, max_quarters=max_quarters)
-            print(f"[temporal] Built {count} snapshots for {bdc_ticker}")
+            logger.info("Built %s snapshots for %s", count, bdc_ticker)
         except Exception as exc:
-            print(f"[temporal] Build failed: {exc}")
+            logger.warning("Build failed: %s", exc)
 
     background_tasks.add_task(_build)
     return {"status": "building", "bdc_ticker": bdc_ticker}
@@ -2656,6 +2667,20 @@ if _UI_DIST.is_dir():
         if file.is_file():
             return FileResponse(file)
         return FileResponse(_UI_DIST / "index.html")
+
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+
+@app.post("/admin/backup", tags=["admin"])
+async def create_backup(current_user: dict = Depends(get_current_user)):
+    """Create a hot backup of the SQLite database (admin only)."""
+    if current_user.get("role") not in ("admin", "owner"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    try:
+        path = sqlite_store.backup_db()
+        return {"status": "ok", "path": path}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Backup failed: {exc}")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

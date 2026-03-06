@@ -9,10 +9,13 @@ DB path: galleon/data/galleon.db (WAL mode, thread-safe).
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger("galleon.sqlite")
 from typing import Any, Dict, List, Optional
 
 _HERE = Path(__file__).parent
@@ -201,7 +204,7 @@ def init_db() -> None:
         except Exception:
             pass  # column already exists
 
-    print(f"[sqlite_store] Initialized DB at {DB_PATH}")
+    logger.info("Initialized DB at %s", DB_PATH)
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -336,26 +339,31 @@ def load_snapshots() -> Dict[str, List[Dict]]:
 
 
 def save_snapshots_bulk(snapshots: Dict[str, List[Dict]]) -> None:
-    """Bulk save all temporal snapshots (replaces existing)."""
+    """Bulk save all temporal snapshots (replaces existing). Atomic transaction."""
     conn = _get_conn()
     with _lock:
-        conn.execute("DELETE FROM temporal_snapshots")
-        for norm, snaps in snapshots.items():
-            for s in snaps:
-                conn.execute(
-                    """INSERT OR REPLACE INTO temporal_snapshots
-                       (normalized_name, period, source_bdc, company_name,
-                        fair_value_usd, cost_basis_usd, pricing_spread,
-                        non_accrual, facility_type, sector)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        norm, s.get("period"), s.get("source_bdc"), s.get("company_name"),
-                        s.get("fair_value_usd"), s.get("cost_basis_usd"),
-                        s.get("pricing_spread"), int(s.get("non_accrual", False)),
-                        s.get("facility_type"), s.get("sector"),
-                    ),
-                )
-        conn.commit()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("DELETE FROM temporal_snapshots")
+            for norm, snaps in snapshots.items():
+                for s in snaps:
+                    conn.execute(
+                        """INSERT OR REPLACE INTO temporal_snapshots
+                           (normalized_name, period, source_bdc, company_name,
+                            fair_value_usd, cost_basis_usd, pricing_spread,
+                            non_accrual, facility_type, sector)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            norm, s.get("period"), s.get("source_bdc"), s.get("company_name"),
+                            s.get("fair_value_usd"), s.get("cost_basis_usd"),
+                            s.get("pricing_spread"), int(s.get("non_accrual", False)),
+                            s.get("facility_type"), s.get("sector"),
+                        ),
+                    )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
 
 
 # ── BDC Index ────────────────────────────────────────────────────────────────
@@ -376,7 +384,7 @@ def load_bdc_index() -> List[Dict]:
 
 
 def save_bdc_index(flat_index: List[Dict], last_indexed: Optional[str] = None) -> None:
-    """Bulk save the BDC flat index (replaces existing)."""
+    """Bulk save the BDC flat index (replaces existing). Atomic transaction."""
     conn = _get_conn()
     _KNOWN_COLS = {
         "company_name", "source_bdc", "sector", "facility_type",
@@ -384,29 +392,34 @@ def save_bdc_index(flat_index: List[Dict], last_indexed: Optional[str] = None) -
         "non_accrual", "filing_date",
     }
     with _lock:
-        conn.execute("DELETE FROM bdc_index")
-        for co in flat_index:
-            extra_keys = {k: v for k, v in co.items() if k not in _KNOWN_COLS and k != "_placeholder"}
-            conn.execute(
-                """INSERT OR REPLACE INTO bdc_index
-                   (company_name, source_bdc, sector, facility_type, pricing_spread,
-                    maturity_date, fair_value_usd, cost_basis_usd, non_accrual,
-                    filing_date, extra)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    co.get("company_name"), co.get("source_bdc"), co.get("sector"),
-                    co.get("facility_type"), co.get("pricing_spread"), co.get("maturity_date"),
-                    co.get("fair_value_usd"), co.get("cost_basis_usd"),
-                    int(co.get("non_accrual", False)), co.get("filing_date"),
-                    json.dumps(extra_keys) if extra_keys else None,
-                ),
-            )
-        if last_indexed:
-            conn.execute(
-                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('bdc_last_indexed', ?)",
-                (last_indexed,),
-            )
-        conn.commit()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("DELETE FROM bdc_index")
+            for co in flat_index:
+                extra_keys = {k: v for k, v in co.items() if k not in _KNOWN_COLS and k != "_placeholder"}
+                conn.execute(
+                    """INSERT OR REPLACE INTO bdc_index
+                       (company_name, source_bdc, sector, facility_type, pricing_spread,
+                        maturity_date, fair_value_usd, cost_basis_usd, non_accrual,
+                        filing_date, extra)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        co.get("company_name"), co.get("source_bdc"), co.get("sector"),
+                        co.get("facility_type"), co.get("pricing_spread"), co.get("maturity_date"),
+                        co.get("fair_value_usd"), co.get("cost_basis_usd"),
+                        int(co.get("non_accrual", False)), co.get("filing_date"),
+                        json.dumps(extra_keys) if extra_keys else None,
+                    ),
+                )
+            if last_indexed:
+                conn.execute(
+                    "INSERT OR REPLACE INTO metadata (key, value) VALUES ('bdc_last_indexed', ?)",
+                    (last_indexed,),
+                )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
 
 
 def load_bdc_last_indexed() -> Optional[str]:
@@ -766,3 +779,23 @@ def list_org_users(org_id: str) -> List[Dict]:
         "SELECT * FROM users WHERE org_id = ? ORDER BY created_at ASC", (org_id,)
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── Backup ──────────────────────────────────────────────────────────────────
+
+def backup_db(dest_path: Optional[str] = None) -> str:
+    """Create a hot backup of the SQLite database using the backup API.
+
+    Returns the path to the backup file.
+    """
+    conn = _get_conn()
+    if dest_path is None:
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        dest_path = str(DB_PATH.parent / f"galleon_backup_{ts}.db")
+    dest = sqlite3.connect(dest_path)
+    try:
+        conn.backup(dest)
+        logger.info("Backup created at %s", dest_path)
+    finally:
+        dest.close()
+    return dest_path

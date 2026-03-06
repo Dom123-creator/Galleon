@@ -5,7 +5,10 @@ JWT authentication, password hashing, Google OAuth, and FastAPI dependencies.
 
 from __future__ import annotations
 
+import logging
 import os
+
+logger = logging.getLogger("galleon.auth")
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
@@ -28,7 +31,7 @@ except ImportError:
 _default_secret = os.urandom(32).hex()
 JWT_SECRET = os.getenv("JWT_SECRET") or _default_secret
 if not os.getenv("JWT_SECRET"):
-    print("[auth] WARNING: JWT_SECRET not set — using random secret (tokens won't survive restarts)")
+    logger.warning("JWT_SECRET not set — using random secret (tokens won't survive restarts)")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24
 

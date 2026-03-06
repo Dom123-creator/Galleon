@@ -14,6 +14,10 @@ Falls back to rule-based responses when ANTHROPIC_API_KEY is not set.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger("galleon.assistant")
+
 import json
 import os
 import re
@@ -36,7 +40,7 @@ try:
     _saved = _db_load_convos()
     if _saved:
         _conversations.update(_saved)
-        print(f"[assistant] Loaded {len(_saved)} conversations from SQLite")
+        logger.info("Loaded %d conversations from SQLite", len(_saved))
     _HAS_SQLITE = True
 except Exception:
     _HAS_SQLITE = False
@@ -188,7 +192,7 @@ def chat(
         try:
             return _claude_chat(message, conversation_id, session_context, company_matches)
         except Exception as exc:
-            print(f"[assistant] Claude API error: {exc} — falling back to rule-based")
+            logger.warning("Claude API error: %s — falling back to rule-based", exc)
 
     # Fallback to rule-based
     return _fallback_response(message, conversation_id, company_matches)
@@ -403,7 +407,7 @@ def _search_companies_from_message(message: str) -> List[Dict]:
         # Only return high-confidence matches
         return [r for r in results if r.get("match_confidence", 0) >= 0.45]
     except Exception as exc:
-        print(f"[assistant] Company search error: {exc}")
+        logger.error("Company search error: %s", exc)
         return []
 
 

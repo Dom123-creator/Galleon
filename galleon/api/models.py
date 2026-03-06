@@ -5,7 +5,7 @@ Pydantic request/response models for the Galleon FastAPI server.
 
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -329,8 +329,8 @@ class MultiSourceSearchOut(BaseModel):
 # ── Assistant ────────────────────────────────────────────────────────────────
 
 class AssistantChatIn(BaseModel):
-    message: str
-    conversation_id: Optional[str] = None
+    message: str = Field(..., min_length=1, max_length=10000)
+    conversation_id: Optional[str] = Field(None, max_length=64)
     session_context: Optional[Dict[str, Any]] = {}
 
 
@@ -509,18 +509,40 @@ class ExposureReport(BaseModel):
 # ── Auth ─────────────────────────────────────────────────────────────────────
 
 class RegisterIn(BaseModel):
-    email: str
-    password: str
-    name: Optional[str] = None
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., min_length=8, max_length=128)
+    name: Optional[str] = Field(None, max_length=100)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("Invalid email address")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one digit")
+        if not any(c.isalpha() for c in v):
+            raise ValueError("Password must contain at least one letter")
+        return v
 
 
 class LoginIn(BaseModel):
-    email: str
-    password: str
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        return v.strip().lower()
 
 
 class GoogleAuthIn(BaseModel):
-    code: str
+    code: str = Field(..., min_length=1, max_length=2048)
 
 
 class AuthTokenOut(BaseModel):
@@ -547,8 +569,8 @@ class UserMeOut(BaseModel):
 # ── Billing ──────────────────────────────────────────────────────────────────
 
 class CheckoutIn(BaseModel):
-    plan: str = "pro"
-    seats: int = 1
+    plan: str = Field("pro", pattern=r"^(pro|enterprise)$")
+    seats: int = Field(1, ge=1, le=20)
 
 
 class CheckoutOut(BaseModel):
@@ -565,8 +587,16 @@ class BillingUsageOut(BaseModel):
 # ── Invites ────────────────────────────────────────────────────────────────
 
 class InviteCreate(BaseModel):
-    email: str
-    role: str = "member"
+    email: str = Field(..., max_length=254)
+    role: str = Field("member", pattern=r"^(member|admin)$")
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("Invalid email address")
+        return v
 
 
 class InviteOut(BaseModel):
@@ -581,9 +611,9 @@ class InviteOut(BaseModel):
 
 
 class InviteAcceptIn(BaseModel):
-    token: str
-    password: Optional[str] = None
-    name: Optional[str] = None
+    token: str = Field(..., min_length=1, max_length=512)
+    password: Optional[str] = Field(None, min_length=8, max_length=128)
+    name: Optional[str] = Field(None, max_length=100)
 
 
 # ── Team ────────────────────────────────────────────────────────────────────

@@ -10,9 +10,12 @@ DB connection.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 from datetime import datetime
+
+logger = logging.getLogger("galleon.db")
 from typing import Any, Dict, List, Optional
 
 # psycopg2 is optional at import time so the server starts without a DB
@@ -48,7 +51,7 @@ def get_pool():
                     minconn=1, maxconn=10, dsn=db_url
                 )
             except Exception as exc:
-                print(f"[db] Pool creation failed: {exc}")
+                logger.error("Pool creation failed: ", exc)
                 return None
     return _pool
 
@@ -61,7 +64,7 @@ def get_conn():
     try:
         return pool.getconn()
     except Exception as exc:
-        print(f"[db] getconn failed: {exc}")
+        logger.error("getconn failed: ", exc)
         return None
 
 
@@ -142,7 +145,7 @@ def upsert_company(
             return str(row["id"]) if row else None
     except Exception as exc:
         conn.rollback()
-        print(f"[db] upsert_company failed: {exc}")
+        logger.error("upsert_company failed: ", exc)
         return None
     finally:
         put_conn(conn)
@@ -175,7 +178,7 @@ def insert_document(
             return str(row["id"]) if row else None
     except Exception as exc:
         conn.rollback()
-        print(f"[db] insert_document failed: {exc}")
+        logger.error("insert_document failed: ", exc)
         return None
     finally:
         put_conn(conn)
@@ -201,7 +204,7 @@ def insert_pipeline(company_id: Optional[str]) -> Optional[str]:
             return str(row["id"]) if row else None
     except Exception as exc:
         conn.rollback()
-        print(f"[db] insert_pipeline failed: {exc}")
+        logger.error("insert_pipeline failed: ", exc)
         return None
     finally:
         put_conn(conn)
@@ -238,7 +241,7 @@ def finish_pipeline(pipeline_id: str, stats: Dict[str, Any], success: bool = Tru
             conn.commit()
     except Exception as exc:
         conn.rollback()
-        print(f"[db] finish_pipeline failed: {exc}")
+        logger.error("finish_pipeline failed: ", exc)
     finally:
         put_conn(conn)
 
@@ -309,14 +312,14 @@ def insert_field_values(
                     inserted += 1
                 except Exception as row_exc:
                     # Skip bad rows, keep going
-                    print(f"[db] insert_field_values row skip: {row_exc}")
+                    logger.error("insert_field_values row skip: ", row_exc)
                     conn.rollback()
                     # Re-open cursor after rollback
                     cur = conn.cursor()
             conn.commit()
     except Exception as exc:
         conn.rollback()
-        print(f"[db] insert_field_values failed: {exc}")
+        logger.error("insert_field_values failed: ", exc)
     finally:
         put_conn(conn)
     return inserted
@@ -359,13 +362,13 @@ def insert_conflicts(
                         ),
                     )
                 except Exception as row_exc:
-                    print(f"[db] insert_conflicts row skip: {row_exc}")
+                    logger.error("insert_conflicts row skip: ", row_exc)
                     conn.rollback()
                     cur = conn.cursor()
             conn.commit()
     except Exception as exc:
         conn.rollback()
-        print(f"[db] insert_conflicts failed: {exc}")
+        logger.error("insert_conflicts failed: ", exc)
     finally:
         put_conn(conn)
 
@@ -411,13 +414,13 @@ def upsert_ground_truth(records: List[Dict[str, Any]]) -> int:
                     )
                     upserted += 1
                 except Exception as row_exc:
-                    print(f"[db] upsert_ground_truth row skip: {row_exc}")
+                    logger.error("upsert_ground_truth row skip: ", row_exc)
                     conn.rollback()
                     cur = conn.cursor()
             conn.commit()
     except Exception as exc:
         conn.rollback()
-        print(f"[db] upsert_ground_truth failed: {exc}")
+        logger.error("upsert_ground_truth failed: ", exc)
     finally:
         put_conn(conn)
     return upserted
@@ -438,7 +441,7 @@ def rebuild_credit_profile(company_id: str, pipeline_id: str) -> None:
     except Exception as exc:
         conn.rollback()
         # Function may not exist yet — log and continue
-        print(f"[db] rebuild_credit_profile skipped: {exc}")
+        logger.error("rebuild_credit_profile skipped: ", exc)
     finally:
         put_conn(conn)
 
@@ -477,7 +480,7 @@ def list_companies() -> List[Dict[str, Any]]:
             )
             return [dict(r) for r in cur.fetchall()]
     except Exception as exc:
-        print(f"[db] list_companies failed: {exc}")
+        logger.error("list_companies failed: ", exc)
         return []
     finally:
         put_conn(conn)
@@ -495,7 +498,7 @@ def get_company(company_id: str) -> Optional[Dict[str, Any]]:
             row = cur.fetchone()
             return dict(row) if row else None
     except Exception as exc:
-        print(f"[db] get_company failed: {exc}")
+        logger.error("get_company failed: ", exc)
         return None
     finally:
         put_conn(conn)
@@ -530,7 +533,7 @@ def get_company_fields(
                 )
             return [dict(r) for r in cur.fetchall()]
     except Exception as exc:
-        print(f"[db] get_company_fields failed: {exc}")
+        logger.error("get_company_fields failed: ", exc)
         return []
     finally:
         put_conn(conn)
@@ -554,7 +557,7 @@ def list_documents() -> List[Dict[str, Any]]:
             )
             return [dict(r) for r in cur.fetchall()]
     except Exception as exc:
-        print(f"[db] list_documents failed: {exc}")
+        logger.error("list_documents failed: ", exc)
         return []
     finally:
         put_conn(conn)
@@ -578,7 +581,7 @@ def get_document(document_id: str) -> Optional[Dict[str, Any]]:
             row = cur.fetchone()
             return dict(row) if row else None
     except Exception as exc:
-        print(f"[db] get_document failed: {exc}")
+        logger.error("get_document failed: ", exc)
         return None
     finally:
         put_conn(conn)
@@ -596,7 +599,7 @@ def get_pipeline(pipeline_id: str) -> Optional[Dict[str, Any]]:
             row = cur.fetchone()
             return dict(row) if row else None
     except Exception as exc:
-        print(f"[db] get_pipeline failed: {exc}")
+        logger.error("get_pipeline failed: ", exc)
         return None
     finally:
         put_conn(conn)
@@ -618,7 +621,7 @@ def get_pipeline_steps(pipeline_id: str) -> List[Dict[str, Any]]:
             )
             return [dict(r) for r in cur.fetchall()]
     except Exception as exc:
-        print(f"[db] get_pipeline_steps failed: {exc}")
+        logger.error("get_pipeline_steps failed: ", exc)
         return []
     finally:
         put_conn(conn)
@@ -645,7 +648,7 @@ def list_conflicts() -> List[Dict[str, Any]]:
             )
             return [dict(r) for r in cur.fetchall()]
     except Exception as exc:
-        print(f"[db] list_conflicts failed: {exc}")
+        logger.error("list_conflicts failed: ", exc)
         return []
     finally:
         put_conn(conn)
@@ -678,7 +681,7 @@ def resolve_conflict(
             return True
     except Exception as exc:
         conn.rollback()
-        print(f"[db] resolve_conflict failed: {exc}")
+        logger.error("resolve_conflict failed: ", exc)
         return False
     finally:
         put_conn(conn)
@@ -709,7 +712,7 @@ def list_rules() -> List[Dict[str, Any]]:
             )
             return [dict(r) for r in cur.fetchall()]
     except Exception as exc:
-        print(f"[db] list_rules failed: {exc}")
+        logger.error("list_rules failed: ", exc)
         return []
     finally:
         put_conn(conn)
@@ -734,7 +737,7 @@ def list_ground_truth() -> List[Dict[str, Any]]:
             )
             return [dict(r) for r in cur.fetchall()]
     except Exception as exc:
-        print(f"[db] list_ground_truth failed: {exc}")
+        logger.error("list_ground_truth failed: ", exc)
         return []
     finally:
         put_conn(conn)
@@ -765,7 +768,7 @@ def get_ground_truth(gt_id: str) -> Optional[Dict[str, Any]]:
             row = cur.fetchone()
             return dict(row) if row else None
     except Exception as exc:
-        print(f"[db] get_ground_truth failed: {exc}")
+        logger.error("get_ground_truth failed: ", exc)
         return None
     finally:
         put_conn(conn)
@@ -788,7 +791,7 @@ def get_field_candidates(company_id: str, field_name: str) -> List[Dict[str, Any
             )
             return [dict(r) for r in cur.fetchall()]
     except Exception as exc:
-        print(f"[db] get_field_candidates failed: {exc}")
+        logger.error("get_field_candidates failed: ", exc)
         return []
     finally:
         put_conn(conn)
@@ -827,7 +830,7 @@ def get_conflict_detail(conflict_id: str) -> Optional[Dict[str, Any]]:
             result["candidates"] = [dict(r) for r in cur.fetchall()]
             return result
     except Exception as exc:
-        print(f"[db] get_conflict_detail failed: {exc}")
+        logger.error("get_conflict_detail failed: ", exc)
         return None
     finally:
         put_conn(conn)
@@ -850,6 +853,6 @@ def update_document_status(document_id: str, status: str, fields_extracted: int 
             conn.commit()
     except Exception as exc:
         conn.rollback()
-        print(f"[db] update_document_status failed: {exc}")
+        logger.error("update_document_status failed: ", exc)
     finally:
         put_conn(conn)
