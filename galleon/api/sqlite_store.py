@@ -496,10 +496,16 @@ def get_org(org_id: str) -> Optional[Dict]:
     return dict(row) if row else None
 
 
+_ORG_COLUMNS = {"name", "plan", "seats", "stripe_customer_id", "stripe_subscription_id"}
+
+
 def update_org(org_id: str, updates: Dict) -> None:
     conn = _get_conn()
-    sets = ", ".join(f"{k} = ?" for k in updates)
-    vals = list(updates.values()) + [org_id]
+    safe = {k: v for k, v in updates.items() if k in _ORG_COLUMNS}
+    if not safe:
+        return
+    sets = ", ".join(f"{k} = ?" for k in safe)
+    vals = list(safe.values()) + [org_id]
     with _lock:
         conn.execute(f"UPDATE organizations SET {sets} WHERE id = ?", vals)
         conn.commit()
@@ -539,10 +545,16 @@ def get_user_by_google_id(google_id: str) -> Optional[Dict]:
     return dict(row) if row else None
 
 
+_USER_COLUMNS = {"email", "password_hash", "name", "org_id", "role", "google_id", "last_login"}
+
+
 def update_user(user_id: str, updates: Dict) -> None:
     conn = _get_conn()
-    sets = ", ".join(f"{k} = ?" for k in updates)
-    vals = list(updates.values()) + [user_id]
+    safe = {k: v for k, v in updates.items() if k in _USER_COLUMNS}
+    if not safe:
+        return
+    sets = ", ".join(f"{k} = ?" for k in safe)
+    vals = list(safe.values()) + [user_id]
     with _lock:
         conn.execute(f"UPDATE users SET {sets} WHERE id = ?", vals)
         conn.commit()
@@ -608,10 +620,16 @@ def list_org_invites(org_id: str) -> List[Dict]:
     return [dict(r) for r in rows]
 
 
+_INVITE_COLUMNS = {"email", "role", "status", "accepted_at"}
+
+
 def update_invite(invite_id: str, updates: Dict) -> None:
     conn = _get_conn()
-    sets = ", ".join(f"{k} = ?" for k in updates)
-    vals = list(updates.values()) + [invite_id]
+    safe = {k: v for k, v in updates.items() if k in _INVITE_COLUMNS}
+    if not safe:
+        return
+    sets = ", ".join(f"{k} = ?" for k in safe)
+    vals = list(safe.values()) + [invite_id]
     with _lock:
         conn.execute(f"UPDATE invites SET {sets} WHERE id = ?", vals)
         conn.commit()

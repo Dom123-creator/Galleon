@@ -135,11 +135,13 @@ app = FastAPI(
     version=VERSION,
 )
 
+_ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:8000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # ── Startup ───────────────────────────────────────────────────────────────────
@@ -443,7 +445,7 @@ def _seed_conflicts_from_bdc() -> list:
 # ── Debug (temporary) ────────────────────────────────────────────────────────
 
 @app.get("/debug/pipelines", tags=["debug"])
-def debug_pipelines():
+def debug_pipelines(current_user: dict = Depends(get_current_user)):
     out = {}
     for pid, mem in _pipelines.items():
         result = mem.get("result")
@@ -779,7 +781,7 @@ def _require_role(current_user: dict, allowed_roles: list) -> dict:
 # ── Companies ─────────────────────────────────────────────────────────────────
 
 @app.get("/companies", response_model=List[CompanySummary], tags=["companies"])
-def list_companies():
+def list_companies(current_user: dict = Depends(get_current_user)):
     rows = db.list_companies()
     if rows:
         return [
@@ -829,7 +831,7 @@ def list_companies():
 
 
 @app.post("/companies", response_model=CompanyOut, status_code=201, tags=["companies"])
-def create_company(body: CompanyCreate):
+def create_company(body: CompanyCreate, current_user: dict = Depends(get_current_user)):
     company_id = db.upsert_company(
         name=body.canonical_name,
         sector=body.sector,
@@ -845,7 +847,7 @@ def create_company(body: CompanyCreate):
 
 
 @app.get("/companies/search", response_model=List[CompanySearchResult], tags=["companies"])
-def search_companies(q: str = "", limit: int = 10):
+def search_companies(q: str = "", limit: int = 10, current_user: dict = Depends(get_current_user)):
     """
     Fuzzy search the BDC universe by company name.
     Returns EDGAR-sourced loan terms for matched portfolio companies.
@@ -875,7 +877,7 @@ def search_companies(q: str = "", limit: int = 10):
 
 
 @app.get("/companies/{company_id}", tags=["companies"])
-def get_company(company_id: str):
+def get_company(company_id: str, current_user: dict = Depends(get_current_user)):
     row = db.get_company(company_id)
     if not row:
         raise HTTPException(status_code=404, detail="Company not found")
@@ -883,7 +885,7 @@ def get_company(company_id: str):
 
 
 @app.get("/companies/{company_id}/fields", response_model=List[FieldValueOut], tags=["companies"])
-def get_company_fields(company_id: str, category: Optional[str] = None):
+def get_company_fields(company_id: str, category: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     fields = db.get_company_fields(company_id, category)
     if fields:
         return [_field_row_to_out(f) for f in fields]
@@ -931,7 +933,7 @@ def get_company_fields(company_id: str, category: Optional[str] = None):
 
 
 @app.get("/companies/{company_id}/fields/{field_name}/lineage", response_model=FieldLineageOut, tags=["companies"])
-def get_field_lineage(company_id: str, field_name: str):
+def get_field_lineage(company_id: str, field_name: str, current_user: dict = Depends(get_current_user)):
     """Return all candidate values for a specific field, showing provenance lineage."""
     # Try DB first
     candidates = db.get_field_candidates(company_id, field_name)
@@ -984,7 +986,7 @@ def get_field_lineage(company_id: str, field_name: str):
 
 
 @app.get("/companies/{company_id}/profile", tags=["companies"])
-def get_company_profile(company_id: str):
+def get_company_profile(company_id: str, current_user: dict = Depends(get_current_user)):
     conn = db.get_conn()
     if conn is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
@@ -1015,16 +1017,15 @@ async def upload_document(
     file: UploadFile = File(...),
     company_name: Optional[str] = Form(default=None),
     company_id: Optional[str] = Form(default=None),
-    current_user: Optional[dict] = Depends(get_current_user_optional),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Upload a PDF. Saves to data/uploads/, resolves company entity,
     creates DB records, starts background extraction.
     Returns {pipeline_id, document_id, status: "running"} immediately.
     """
-    # Check usage limits if authenticated
-    if current_user:
-        _check_and_track_usage(current_user, "upload")
+    # Check usage limits
+    _check_and_track_usage(current_user, "upload")
 
     # Save file
     safe_name = Path(file.filename).name
@@ -1085,7 +1086,7 @@ async def upload_document(
 
 
 @app.get("/documents", response_model=List[DocumentOut], tags=["documents"])
-def list_documents():
+def list_documents(current_user: dict = Depends(get_current_user)):
     rows = db.list_documents()
     if rows:
         return [_doc_row_to_out(r) for r in rows]
@@ -1110,7 +1111,7 @@ def list_documents():
 
 
 @app.get("/documents/{document_id}", tags=["documents"])
-def get_document(document_id: str):
+def get_document(document_id: str, current_user: dict = Depends(get_current_user)):
     row = db.get_document(document_id)
     if not row:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -1124,7 +1125,7 @@ def run_pipeline(
     background_tasks: BackgroundTasks,
     company_id: str,
     document_ids: List[str],
-    current_user: Optional[dict] = Depends(get_current_user_optional),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Trigger a pipeline run for an existing company + document set.
@@ -1152,7 +1153,7 @@ def run_pipeline(
 
 
 @app.get("/pipeline/{pipeline_id}", response_model=PipelineOut, tags=["pipeline"])
-def get_pipeline(pipeline_id: str):
+def get_pipeline(pipeline_id: str, current_user: dict = Depends(get_current_user)):
     # Try DB first
     row = db.get_pipeline(pipeline_id)
     if row:
@@ -1183,7 +1184,7 @@ def get_pipeline(pipeline_id: str):
 
 
 @app.get("/pipeline/{pipeline_id}/steps", response_model=List[PipelineStepOut], tags=["pipeline"])
-def get_pipeline_steps(pipeline_id: str):
+def get_pipeline_steps(pipeline_id: str, current_user: dict = Depends(get_current_user)):
     steps = db.get_pipeline_steps(pipeline_id)
     if steps:
         return [
@@ -1211,7 +1212,7 @@ def get_pipeline_steps(pipeline_id: str):
 # ── EDGAR / Ground Truth ──────────────────────────────────────────────────────
 
 @app.post("/edgar/pull", tags=["edgar"])
-def edgar_pull(background_tasks: BackgroundTasks, live: bool = False):
+def edgar_pull(background_tasks: BackgroundTasks, live: bool = False, current_user: dict = Depends(get_current_user)):
     """
     Run edgar_bdc.py pipeline in background.
     Returns {pipeline_id} immediately.
@@ -1232,7 +1233,7 @@ def edgar_pull(background_tasks: BackgroundTasks, live: bool = False):
 
 
 @app.get("/edgar/ground-truth", tags=["edgar"])
-def list_ground_truth():
+def list_ground_truth(current_user: dict = Depends(get_current_user)):
     """
     Return ground truth records.
     Tries DB first; falls back to data/ground_truth_arcc.json.
@@ -1252,7 +1253,7 @@ def list_ground_truth():
 
 
 @app.get("/edgar/ground-truth/{gt_id}", tags=["edgar"])
-def get_ground_truth(gt_id: str):
+def get_ground_truth(gt_id: str, current_user: dict = Depends(get_current_user)):
     row = db.get_ground_truth(gt_id)
     if row:
         return row
@@ -1270,7 +1271,7 @@ def get_ground_truth(gt_id: str):
 # ── Validation / Benchmark ────────────────────────────────────────────────────
 
 @app.get("/validation/benchmark", response_model=BenchmarkSummary, tags=["validation"])
-def get_benchmark():
+def get_benchmark(current_user: dict = Depends(get_current_user)):
     """
     Aggregate benchmark stats from ground truth data.
     Falls back to JSON if DB unavailable.
@@ -1301,7 +1302,7 @@ def get_benchmark():
 # ── Conflicts ─────────────────────────────────────────────────────────────────
 
 @app.get("/conflicts", response_model=List[ConflictOut], tags=["conflicts"])
-def list_conflicts():
+def list_conflicts(current_user: dict = Depends(get_current_user)):
     rows = db.list_conflicts()
     if rows:
         return [
@@ -1319,7 +1320,7 @@ def list_conflicts():
 
 
 @app.get("/conflicts/{conflict_id}", response_model=ConflictDetailOut, tags=["conflicts"])
-def get_conflict_detail(conflict_id: str):
+def get_conflict_detail(conflict_id: str, current_user: dict = Depends(get_current_user)):
     """Return detailed conflict with all candidate values."""
     row = db.get_conflict_detail(conflict_id)
     if row:
@@ -1377,7 +1378,7 @@ def get_conflict_detail(conflict_id: str):
 
 
 @app.post("/conflicts/{conflict_id}/resolve", tags=["conflicts"])
-def resolve_conflict(conflict_id: str, body: ConflictResolveRequest):
+def resolve_conflict(conflict_id: str, body: ConflictResolveRequest, current_user: dict = Depends(get_current_user)):
     success = db.resolve_conflict(
         conflict_id=conflict_id,
         winner_value_id=body.winner_value_id,
@@ -1392,7 +1393,7 @@ def resolve_conflict(conflict_id: str, body: ConflictResolveRequest):
 # ── Rules ─────────────────────────────────────────────────────────────────────
 
 @app.get("/rules", response_model=List[RuleOut], tags=["rules"])
-def list_rules():
+def list_rules(current_user: dict = Depends(get_current_user)):
     rows = db.list_rules()
     if rows:
         return [
@@ -1415,7 +1416,7 @@ def list_rules():
 # ── BDC Universe ──────────────────────────────────────────────────────────────
 
 @app.get("/bdc/universe", response_model=List[BdcSummary], tags=["bdc"])
-def get_bdc_universe():
+def get_bdc_universe(current_user: dict = Depends(get_current_user)):
     """Return list of all indexed BDCs with company counts."""
     try:
         from bdc_index import get_universe_summary, BDC_SEED  # type: ignore
@@ -1442,7 +1443,7 @@ def get_bdc_universe():
 
 
 @app.post("/bdc/index", tags=["bdc"])
-def trigger_bdc_index(background_tasks: BackgroundTasks, max_bdcs: int = 25):
+def trigger_bdc_index(background_tasks: BackgroundTasks, max_bdcs: int = 25, current_user: dict = Depends(get_current_user)):
     """Trigger a background BDC universe index build. Returns {pipeline_id}."""
     pipeline_id = str(uuid.uuid4())
     _pipelines[pipeline_id] = {
@@ -1462,7 +1463,7 @@ def trigger_bdc_index(background_tasks: BackgroundTasks, max_bdcs: int = 25):
 # ── FDIC ───────────────────────────────────────────────────────────────────────
 
 @app.get("/fdic/institutions", response_model=List[FdicInstitutionOut], tags=["fdic"])
-def search_fdic_institutions(q: str = "", limit: int = 10):
+def search_fdic_institutions(q: str = "", limit: int = 10, current_user: dict = Depends(get_current_user)):
     """Search FDIC for bank institutions by name."""
     if not q.strip():
         return []
@@ -1475,7 +1476,7 @@ def search_fdic_institutions(q: str = "", limit: int = 10):
 
 
 @app.get("/fdic/financials/{cert}", response_model=List[FdicFinancialsOut], tags=["fdic"])
-def get_fdic_financials(cert: str, limit: int = 4):
+def get_fdic_financials(cert: str, limit: int = 4, current_user: dict = Depends(get_current_user)):
     """Get quarterly financials for a bank by FDIC certificate number."""
     try:
         from clients.fdic_client import get_financials  # type: ignore
@@ -1486,7 +1487,7 @@ def get_fdic_financials(cert: str, limit: int = 4):
 
 
 @app.get("/fdic/failures", response_model=List[FdicFailureOut], tags=["fdic"])
-def search_fdic_failures(q: str = "", limit: int = 10):
+def search_fdic_failures(q: str = "", limit: int = 10, current_user: dict = Depends(get_current_user)):
     """Search FDIC failed bank list."""
     if not q.strip():
         return []
@@ -1501,7 +1502,7 @@ def search_fdic_failures(q: str = "", limit: int = 10):
 # ── USASpending ────────────────────────────────────────────────────────────────
 
 @app.get("/usaspending/awards", response_model=List[UsaSpendingAwardOut], tags=["usaspending"])
-def search_usaspending_awards(q: str = "", award_type: Optional[str] = None, limit: int = 10):
+def search_usaspending_awards(q: str = "", award_type: Optional[str] = None, limit: int = 10, current_user: dict = Depends(get_current_user)):
     """Search USASpending.gov for federal awards (contracts, grants, loans)."""
     if not q.strip():
         return []
@@ -1514,7 +1515,7 @@ def search_usaspending_awards(q: str = "", award_type: Optional[str] = None, lim
 
 
 @app.get("/usaspending/recipient", response_model=Optional[RecipientProfileOut], tags=["usaspending"])
-def get_usaspending_recipient(name: str = ""):
+def get_usaspending_recipient(name: str = "", current_user: dict = Depends(get_current_user)):
     """Look up a recipient profile on USASpending.gov."""
     if not name.strip():
         return None
@@ -1529,7 +1530,7 @@ def get_usaspending_recipient(name: str = ""):
 # ── SBA ────────────────────────────────────────────────────────────────────────
 
 @app.get("/sba/loans", response_model=List[SbaLoanOut], tags=["sba"])
-def search_sba_loans(q: str = "", limit: int = 10):
+def search_sba_loans(q: str = "", limit: int = 10, current_user: dict = Depends(get_current_user)):
     """Search SBA loan data by recipient name."""
     if not q.strip():
         return []
@@ -1544,7 +1545,7 @@ def search_sba_loans(q: str = "", limit: int = 10):
 # ── OpenCorporates ─────────────────────────────────────────────────────────────
 
 @app.get("/opencorporates/companies", response_model=List[OpenCorpCompanyOut], tags=["opencorporates"])
-def search_opencorporates_companies(q: str = "", jurisdiction: Optional[str] = None, limit: int = 10):
+def search_opencorporates_companies(q: str = "", jurisdiction: Optional[str] = None, limit: int = 10, current_user: dict = Depends(get_current_user)):
     """Search OpenCorporates for company registration data."""
     if not q.strip():
         return []
@@ -1557,7 +1558,7 @@ def search_opencorporates_companies(q: str = "", jurisdiction: Optional[str] = N
 
 
 @app.get("/opencorporates/officers", response_model=List[OpenCorpOfficerOut], tags=["opencorporates"])
-def search_opencorporates_officers(q: str = "", limit: int = 10):
+def search_opencorporates_officers(q: str = "", limit: int = 10, current_user: dict = Depends(get_current_user)):
     """Search OpenCorporates for corporate officers/directors."""
     if not q.strip():
         return []
@@ -1572,7 +1573,7 @@ def search_opencorporates_officers(q: str = "", limit: int = 10):
 # ── UCC ────────────────────────────────────────────────────────────────────────
 
 @app.get("/ucc/filings", response_model=List[UccFilingOut], tags=["ucc"])
-def search_ucc_filings_route(q: str = "", state: Optional[str] = None, limit: int = 10):
+def search_ucc_filings_route(q: str = "", state: Optional[str] = None, limit: int = 10, current_user: dict = Depends(get_current_user)):
     """Search UCC filings and liens for an entity (aggregates EDGAR + OpenCorporates)."""
     if not q.strip():
         return []
@@ -1587,7 +1588,7 @@ def search_ucc_filings_route(q: str = "", state: Optional[str] = None, limit: in
 # ── Multi-Source Search ────────────────────────────────────────────────────────
 
 @app.get("/search/multi", response_model=MultiSourceSearchOut, tags=["search"])
-def multi_source_search(q: str = "", sources: Optional[str] = None, limit: int = 5):
+def multi_source_search(q: str = "", sources: Optional[str] = None, limit: int = 5, current_user: dict = Depends(get_current_user)):
     """
     Search across multiple data sources simultaneously.
     sources: comma-separated list of sources to query (fdic,usaspending,opencorporates,ucc,bdc).
@@ -1665,7 +1666,7 @@ def multi_source_search(q: str = "", sources: Optional[str] = None, limit: int =
 # ── Assistant ──────────────────────────────────────────────────────────────────
 
 @app.post("/assistant/chat", response_model=AssistantChatOut, tags=["assistant"])
-def assistant_chat(body: AssistantChatIn, current_user: Optional[dict] = Depends(get_current_user_optional)):
+def assistant_chat(body: AssistantChatIn, current_user: dict = Depends(get_current_user)):
     """
     Send a message to the Galleon AI assistant.
     Returns AI response with optional action and company matches.
@@ -2033,7 +2034,7 @@ def _static_rules() -> List[RuleOut]:
 # ── Cross-Reference Graph ────────────────────────────────────────────────────
 
 @app.get("/bdc/cross-references", response_model=List[CrossRefCompany], tags=["bdc"])
-def get_cross_references(min_holders: int = 2, limit: int = 50):
+def get_cross_references(min_holders: int = 2, limit: int = 50, current_user: dict = Depends(get_current_user)):
     """Return companies held by multiple BDCs, sorted by FV discrepancy."""
     try:
         from bdc_index import build_cross_references  # type: ignore
@@ -2054,7 +2055,7 @@ def get_cross_references(min_holders: int = 2, limit: int = 50):
 
 
 @app.get("/bdc/cross-reference-stats", response_model=CrossRefStats, tags=["bdc"])
-def get_cross_ref_stats():
+def get_cross_ref_stats(current_user: dict = Depends(get_current_user)):
     """Summary stats for cross-BDC holdings."""
     try:
         from bdc_index import get_cross_reference_stats  # type: ignore
@@ -2067,7 +2068,7 @@ def get_cross_ref_stats():
 # ── Temporal Analysis ────────────────────────────────────────────────────────
 
 @app.post("/temporal/build", tags=["temporal"])
-def build_temporal(background_tasks: BackgroundTasks, bdc_ticker: str = "ARCC", max_quarters: int = 8):
+def build_temporal(background_tasks: BackgroundTasks, bdc_ticker: str = "ARCC", max_quarters: int = 8, current_user: dict = Depends(get_current_user)):
     """Build temporal index for a BDC (background task)."""
     from bdc_index import BDC_SEED  # type: ignore
     cik = BDC_SEED.get(bdc_ticker)
@@ -2087,7 +2088,7 @@ def build_temporal(background_tasks: BackgroundTasks, bdc_ticker: str = "ARCC", 
 
 
 @app.get("/temporal/timeline/{company_name}", response_model=CompanyTimeline, tags=["temporal"])
-def get_timeline(company_name: str, bdc: Optional[str] = None):
+def get_timeline(company_name: str, bdc: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Get time-series snapshots for a company."""
     try:
         from pipeline.temporal import get_company_timeline  # type: ignore
@@ -2103,7 +2104,7 @@ def get_timeline(company_name: str, bdc: Optional[str] = None):
 
 
 @app.get("/temporal/warnings", response_model=List[EarlyWarning], tags=["temporal"])
-def get_warnings(min_quarters: int = 2):
+def get_warnings(min_quarters: int = 2, current_user: dict = Depends(get_current_user)):
     """Get early warning signals for declining companies."""
     try:
         from pipeline.temporal import detect_early_warnings  # type: ignore
@@ -2114,7 +2115,7 @@ def get_warnings(min_quarters: int = 2):
 
 
 @app.get("/temporal/stats", response_model=TemporalStats, tags=["temporal"])
-def get_temporal_stats_route():
+def get_temporal_stats_route(current_user: dict = Depends(get_current_user)):
     """Get temporal analysis summary stats."""
     try:
         from pipeline.temporal import get_temporal_stats  # type: ignore
@@ -2126,7 +2127,7 @@ def get_temporal_stats_route():
 # ── EDGAR Monitor ────────────────────────────────────────────────────────────
 
 @app.get("/monitor/status", response_model=MonitorStatus, tags=["monitor"])
-def monitor_status():
+def monitor_status(current_user: dict = Depends(get_current_user)):
     """Get EDGAR monitor status."""
     try:
         from pipeline.edgar_monitor import get_monitor_status  # type: ignore
@@ -2136,7 +2137,7 @@ def monitor_status():
 
 
 @app.get("/monitor/alerts", response_model=List[FilingAlert], tags=["monitor"])
-def monitor_alerts(unread_only: bool = False, limit: int = 50):
+def monitor_alerts(unread_only: bool = False, limit: int = 50, current_user: dict = Depends(get_current_user)):
     """Get filing alerts from EDGAR monitor."""
     try:
         from pipeline.edgar_monitor import get_alerts  # type: ignore
@@ -2147,7 +2148,7 @@ def monitor_alerts(unread_only: bool = False, limit: int = 50):
 
 
 @app.post("/monitor/alerts/{alert_id}/read", tags=["monitor"])
-def mark_alert_read_route(alert_id: str):
+def mark_alert_read_route(alert_id: str, current_user: dict = Depends(get_current_user)):
     """Mark a single alert as read."""
     try:
         from pipeline.edgar_monitor import mark_alert_read  # type: ignore
@@ -2162,7 +2163,7 @@ def mark_alert_read_route(alert_id: str):
 
 
 @app.post("/monitor/alerts/read-all", tags=["monitor"])
-def mark_all_alerts_read():
+def mark_all_alerts_read(current_user: dict = Depends(get_current_user)):
     """Mark all alerts as read."""
     try:
         from pipeline.edgar_monitor import mark_all_read  # type: ignore
@@ -2183,11 +2184,15 @@ _concentration_limits = {
 
 
 @app.get("/workflow/reviews", response_model=List[DealReview], tags=["workflow"])
-def list_deal_reviews():
-    """List all deal reviews."""
+def list_deal_reviews(current_user: dict = Depends(get_current_user)):
+    """List deal reviews for the current user's organization."""
     if not _deal_reviews:
         _seed_deal_reviews()
-    reviews = sorted(_deal_reviews.values(), key=lambda r: r["created_at"], reverse=True)
+    org_id = current_user.get("org_id")
+    reviews = sorted(
+        [r for r in _deal_reviews.values() if r.get("org_id") == org_id or not r.get("org_id")],
+        key=lambda r: r["created_at"], reverse=True,
+    )
     # Attach comment counts
     try:
         counts = sqlite_store.count_comments_by_reviews([r["id"] for r in reviews])
@@ -2199,7 +2204,7 @@ def list_deal_reviews():
 
 
 @app.post("/workflow/reviews", response_model=DealReview, status_code=201, tags=["workflow"])
-def create_deal_review(body: DealReviewCreate, current_user: Optional[dict] = Depends(get_current_user_optional)):
+def create_deal_review(body: DealReviewCreate, current_user: dict = Depends(get_current_user)):
     """Create a new deal review."""
     now = datetime.utcnow().isoformat() + "Z"
     review = {
@@ -2211,7 +2216,8 @@ def create_deal_review(body: DealReviewCreate, current_user: Optional[dict] = De
         "assignee_id": body.assignee_id,
         "notes": body.notes,
         "priority": body.priority,
-        "created_by": current_user["user_id"] if current_user else None,
+        "created_by": current_user["user_id"],
+        "org_id": current_user.get("org_id"),
         "comment_count": 0,
         "created_at": now,
         "updated_at": now,
@@ -2221,17 +2227,19 @@ def create_deal_review(body: DealReviewCreate, current_user: Optional[dict] = De
         sqlite_store.save_deal_review(review)
     except Exception:
         pass
-    if current_user:
-        _log_user_activity(current_user, "create_review", "review", review["id"], {"company": body.company_name})
+    _log_user_activity(current_user, "create_review", "review", review["id"], {"company": body.company_name})
     return DealReview(**review)
 
 
 @app.patch("/workflow/reviews/{review_id}", response_model=DealReview, tags=["workflow"])
-def update_deal_review(review_id: str, body: DealReviewUpdate, current_user: Optional[dict] = Depends(get_current_user_optional)):
+def update_deal_review(review_id: str, body: DealReviewUpdate, current_user: dict = Depends(get_current_user)):
     """Update a deal review (status, assignee, notes, priority)."""
     review = _deal_reviews.get(review_id)
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
+    # Multi-tenancy: only allow access to own org's reviews
+    if review.get("org_id") and review["org_id"] != current_user.get("org_id"):
+        raise HTTPException(status_code=403, detail="Access denied")
     changes = {}
     if body.status is not None:
         changes["status"] = body.status
@@ -2250,7 +2258,7 @@ def update_deal_review(review_id: str, body: DealReviewUpdate, current_user: Opt
         sqlite_store.save_deal_review(review)
     except Exception:
         pass
-    if current_user and changes:
+    if changes:
         _log_user_activity(current_user, "update_review", "review", review_id, changes)
     return DealReview(**review)
 
@@ -2258,7 +2266,7 @@ def update_deal_review(review_id: str, body: DealReviewUpdate, current_user: Opt
 # ── Comments on Reviews ──────────────────────────────────────────────────────
 
 @app.get("/workflow/reviews/{review_id}/comments", response_model=List[CommentOut], tags=["workflow"])
-def list_review_comments(review_id: str):
+def list_review_comments(review_id: str, current_user: dict = Depends(get_current_user)):
     """List comments on a deal review."""
     return [CommentOut(**c) for c in sqlite_store.list_comments_for_review(review_id)]
 
@@ -2486,7 +2494,7 @@ def get_team_usage(month: Optional[str] = None, current_user: dict = Depends(get
 
 
 @app.get("/workflow/exposure", response_model=ExposureReport, tags=["workflow"])
-def get_exposure():
+def get_exposure(current_user: dict = Depends(get_current_user)):
     """Aggregate portfolio exposure by sector, BDC, and facility type."""
     flat = _get_bdc_flat_index()
     if not flat:
@@ -2541,9 +2549,9 @@ def get_exposure():
 
 
 @app.get("/workflow/concentration", response_model=List[ConcentrationLimit], tags=["workflow"])
-def get_concentration():
+def get_concentration(current_user: dict = Depends(get_current_user)):
     """Check portfolio concentration against limits."""
-    exposure = get_exposure()
+    exposure = get_exposure(current_user=current_user)
     return exposure.concentration_alerts
 
 

@@ -25,7 +25,10 @@ except ImportError:
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-JWT_SECRET = os.getenv("JWT_SECRET", "galleon-dev-secret-change-me")
+_default_secret = os.urandom(32).hex()
+JWT_SECRET = os.getenv("JWT_SECRET") or _default_secret
+if not os.getenv("JWT_SECRET"):
+    print("[auth] WARNING: JWT_SECRET not set — using random secret (tokens won't survive restarts)")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24
 
