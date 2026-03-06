@@ -18,6 +18,10 @@ class HealthOut(BaseModel):
     monitor_running: bool = False
     version: str
     timestamp: str
+    db_latency_ms: Optional[float] = None
+    anthropic_configured: bool = False
+    stripe_configured: bool = False
+    google_oauth_configured: bool = False
 
 
 # ── Companies ─────────────────────────────────────────────────────────────────

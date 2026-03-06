@@ -140,13 +140,20 @@ logging.basicConfig(
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
+_enable_docs = os.getenv("ENABLE_OPENAPI_DOCS", "true").lower() == "true"
+
 app = FastAPI(
     title="Galleon API",
     description="Provenance-aware credit data extraction for BDC loan portfolios.",
     version=VERSION,
+    docs_url="/docs" if _enable_docs else None,
+    redoc_url="/redoc" if _enable_docs else None,
+    openapi_url="/openapi.json" if _enable_docs else None,
 )
 
 _ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:8000").split(",")
+_ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
@@ -154,6 +161,29 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+# Production security: HTTPS redirect + trusted hosts
+if _ENVIRONMENT == "production":
+    from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+    _allowed_hosts = os.getenv("ALLOWED_HOSTS", "").split(",")
+    if _allowed_hosts and _allowed_hosts[0]:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts)
+    app.add_middleware(HTTPSRedirectMiddleware)
+
+
+@app.middleware("http")
+async def security_and_request_id(request: Request, call_next):
+    # Generate or propagate request ID
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:16]
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if _ENVIRONMENT == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 
 # ── Rate Limiter ─────────────────────────────────────────────────────────────
@@ -508,10 +538,13 @@ def debug_pipelines(current_user: dict = Depends(get_current_user)):
 
 @app.get("/health", response_model=HealthOut, tags=["health"])
 def health():
-    # Check SQLite
+    # Check SQLite + measure latency
     sqlite_ok = False
+    db_latency_ms = None
     try:
+        t0 = time.monotonic()
         sqlite_store._get_conn().execute("SELECT 1").fetchone()
+        db_latency_ms = round((time.monotonic() - t0) * 1000, 2)
         sqlite_ok = True
     except Exception:
         pass
@@ -540,6 +573,10 @@ def health():
         monitor_running=monitor_running,
         version=VERSION,
         timestamp=datetime.utcnow().isoformat() + "Z",
+        db_latency_ms=db_latency_ms,
+        anthropic_configured=bool(os.getenv("ANTHROPIC_API_KEY")),
+        stripe_configured=bool(os.getenv("STRIPE_SECRET_KEY")),
+        google_oauth_configured=bool(os.getenv("GOOGLE_CLIENT_ID")),
     )
 
 
@@ -929,7 +966,8 @@ def search_companies(q: str = "", limit: int = 10, current_user: dict = Depends(
             for r in results
         ]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/companies/{company_id}", tags=["companies"])
@@ -1060,7 +1098,8 @@ def get_company_profile(company_id: str, current_user: dict = Depends(get_curren
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         db.put_conn(conn)
 
@@ -1499,7 +1538,8 @@ def get_bdc_universe(current_user: dict = Depends(get_current_user)):
             for ticker, cik in BDC_SEED.items()
         ]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/bdc/index", tags=["bdc"])
@@ -1532,7 +1572,8 @@ def search_fdic_institutions(q: str = "", limit: int = 10, current_user: dict = 
         results = search_institutions(q.strip(), limit=limit)
         return [FdicInstitutionOut(**r) for r in results]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/fdic/financials/{cert}", response_model=List[FdicFinancialsOut], tags=["fdic"])
@@ -1543,7 +1584,8 @@ def get_fdic_financials(cert: str, limit: int = 4, current_user: dict = Depends(
         results = get_financials(cert, limit=limit)
         return [FdicFinancialsOut(**r) for r in results]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/fdic/failures", response_model=List[FdicFailureOut], tags=["fdic"])
@@ -1556,7 +1598,8 @@ def search_fdic_failures(q: str = "", limit: int = 10, current_user: dict = Depe
         results = get_failures(q.strip(), limit=limit)
         return [FdicFailureOut(**r) for r in results]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ── USASpending ────────────────────────────────────────────────────────────────
@@ -1571,7 +1614,8 @@ def search_usaspending_awards(q: str = "", award_type: Optional[str] = None, lim
         results = search_awards(q.strip(), award_type=award_type, limit=limit)
         return [UsaSpendingAwardOut(**r) for r in results]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/usaspending/recipient", response_model=Optional[RecipientProfileOut], tags=["usaspending"])
@@ -1584,7 +1628,8 @@ def get_usaspending_recipient(name: str = "", current_user: dict = Depends(get_c
         result = get_recipient_profile(name.strip())
         return RecipientProfileOut(**result) if result else None
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ── SBA ────────────────────────────────────────────────────────────────────────
@@ -1599,7 +1644,8 @@ def search_sba_loans(q: str = "", limit: int = 10, current_user: dict = Depends(
         results = _search(q.strip(), limit=limit)
         return [SbaLoanOut(**r) for r in results]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ── OpenCorporates ─────────────────────────────────────────────────────────────
@@ -1614,7 +1660,8 @@ def search_opencorporates_companies(q: str = "", jurisdiction: Optional[str] = N
         results = search_companies(q.strip(), jurisdiction=jurisdiction, limit=limit)
         return [OpenCorpCompanyOut(**r) for r in results]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/opencorporates/officers", response_model=List[OpenCorpOfficerOut], tags=["opencorporates"])
@@ -1627,7 +1674,8 @@ def search_opencorporates_officers(q: str = "", limit: int = 10, current_user: d
         results = search_officers(q.strip(), limit=limit)
         return [OpenCorpOfficerOut(**r) for r in results]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ── UCC ────────────────────────────────────────────────────────────────────────
@@ -1642,7 +1690,8 @@ def search_ucc_filings_route(q: str = "", state: Optional[str] = None, limit: in
         results = search_ucc_filings(q.strip(), state=state, limit=limit)
         return [UccFilingOut(**r) for r in results]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ── Multi-Source Search ────────────────────────────────────────────────────────
@@ -1769,7 +1818,8 @@ def assistant_chat(body: AssistantChatIn, current_user: dict = Depends(get_curre
             company_matches=matches,
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ── Background tasks ──────────────────────────────────────────────────────────
@@ -2111,7 +2161,8 @@ def get_cross_references(min_holders: int = 2, limit: int = 50, current_user: di
             for x in xrefs[:limit]
         ]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/bdc/cross-reference-stats", response_model=CrossRefStats, tags=["bdc"])
@@ -2122,7 +2173,8 @@ def get_cross_ref_stats(current_user: dict = Depends(get_current_user)):
         stats = get_cross_reference_stats()
         return CrossRefStats(**stats)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ── Temporal Analysis ────────────────────────────────────────────────────────
@@ -2160,7 +2212,8 @@ def get_timeline(company_name: str, bdc: Optional[str] = None, current_user: dic
             quarters_declining=result["quarters_declining"],
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/temporal/warnings", response_model=List[EarlyWarning], tags=["temporal"])
@@ -2171,7 +2224,8 @@ def get_warnings(min_quarters: int = 2, current_user: dict = Depends(get_current
         warnings = detect_early_warnings(threshold_quarters=min_quarters)
         return [EarlyWarning(**w) for w in warnings]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/temporal/stats", response_model=TemporalStats, tags=["temporal"])
@@ -2181,7 +2235,8 @@ def get_temporal_stats_route(current_user: dict = Depends(get_current_user)):
         from pipeline.temporal import get_temporal_stats  # type: ignore
         return TemporalStats(**get_temporal_stats())
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ── EDGAR Monitor ────────────────────────────────────────────────────────────
@@ -2193,7 +2248,8 @@ def monitor_status(current_user: dict = Depends(get_current_user)):
         from pipeline.edgar_monitor import get_monitor_status  # type: ignore
         return MonitorStatus(**get_monitor_status())
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/monitor/alerts", response_model=List[FilingAlert], tags=["monitor"])
@@ -2204,7 +2260,8 @@ def monitor_alerts(unread_only: bool = False, limit: int = 50, current_user: dic
         alerts = get_alerts(unread_only=unread_only, limit=limit)
         return [FilingAlert(**a) for a in alerts]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/monitor/alerts/{alert_id}/read", tags=["monitor"])
@@ -2219,7 +2276,8 @@ def mark_alert_read_route(alert_id: str, current_user: dict = Depends(get_curren
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/monitor/alerts/read-all", tags=["monitor"])
@@ -2230,7 +2288,8 @@ def mark_all_alerts_read(current_user: dict = Depends(get_current_user)):
         count = mark_all_read()
         return {"status": "ok", "marked": count}
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Internal error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ── Workflow Layer ───────────────────────────────────────────────────────────
@@ -2680,7 +2739,21 @@ async def create_backup(current_user: dict = Depends(get_current_user)):
         path = sqlite_store.backup_db()
         return {"status": "ok", "path": path}
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Backup failed: {exc}")
+        logger.error("Backup failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Backup failed")
+
+
+@app.post("/admin/cleanup", tags=["admin"])
+async def run_cleanup(current_user: dict = Depends(get_current_user)):
+    """Delete expired sessions, old invites, and stale activity logs (admin only)."""
+    if current_user.get("role") not in ("admin", "owner"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    try:
+        counts = sqlite_store.cleanup_stale_data()
+        return {"status": "ok", "deleted": counts}
+    except Exception as exc:
+        logger.error("Cleanup failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Cleanup failed")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

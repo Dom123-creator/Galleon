@@ -799,3 +799,45 @@ def backup_db(dest_path: Optional[str] = None) -> str:
     finally:
         dest.close()
     return dest_path
+
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+
+def cleanup_stale_data(
+    session_days: int = 7,
+    invite_days: int = 30,
+    activity_days: int = 90,
+) -> Dict[str, int]:
+    """Delete expired sessions, old invites, and old activity logs.
+
+    Returns counts of deleted rows per table.
+    """
+    conn = _get_conn()
+    counts: Dict[str, int] = {}
+    with _write_lock:
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            # Expired sessions
+            cur = conn.execute(
+                "DELETE FROM sessions WHERE created_at < datetime('now', ?)",
+                (f"-{session_days} days",),
+            )
+            counts["sessions"] = cur.rowcount
+            # Old pending/expired invites
+            cur = conn.execute(
+                "DELETE FROM invites WHERE status IN ('pending','expired') AND created_at < datetime('now', ?)",
+                (f"-{invite_days} days",),
+            )
+            counts["invites"] = cur.rowcount
+            # Old activity logs
+            cur = conn.execute(
+                "DELETE FROM activity_log WHERE created_at < datetime('now', ?)",
+                (f"-{activity_days} days",),
+            )
+            counts["activity_log"] = cur.rowcount
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    logger.info("Cleanup: %s", counts)
+    return counts
