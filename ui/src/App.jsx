@@ -677,93 +677,199 @@ function AuthScreen({ onLogin }) {
     outline: "none", boxSizing: "border-box",
   };
 
+  const authFormRef = useRef(null);
+  const scrollToAuth = () => authFormRef.current?.scrollIntoView({ behavior: "smooth" });
+
+  const headingFont = { fontFamily: "'Playfair Display', serif" };
+  const monoFont = { fontFamily: "'DM Mono', monospace" };
+  const sectionStyle = { maxWidth: 1000, margin: "0 auto", padding: "60px 24px" };
+
+  const problemCards = [
+    { icon: "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z", title: "Scattered Data", desc: "Portfolio data trapped across 10-Ks, credit agreements, amendments, and internal systems with no single source of truth." },
+    { icon: "M15 12a3 3 0 11-6 0 3 3 0 016 0z M2 12C2 6.48 6.48 2 12 2s10 4.48 10 10-4.48 10-10 10S2 17.52 2 12z", title: "No Cross-BDC Visibility", desc: "Analysts can't see which companies appear across multiple BDC portfolios or how valuations differ between holders." },
+    { icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z", title: "Manual Extraction", desc: "60-70% of analyst time spent manually pulling data from PDFs and filings instead of making investment decisions." },
+  ];
+
+  const capabilities = [
+    { icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z", title: "Document Extraction", desc: "8-stage pipeline turns PDFs into structured data" },
+    { icon: "M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101", title: "Cross-Ref Analysis", desc: "See which companies span multiple BDC portfolios" },
+    { icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z", title: "Temporal Tracking", desc: "Track valuation changes and covenant shifts over time" },
+    { icon: "M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0a3 3 0 11-6 0", title: "EDGAR Monitor", desc: "Real-time alerts on new SEC filings and amendments" },
+    { icon: "M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z", title: "AI Assistant", desc: "Natural language queries across your entire portfolio" },
+    { icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0", title: "Team Collaboration", desc: "Deal reviews, comments, and workflow management" },
+  ];
+
+  const stats = [
+    { value: "25+", label: "BDCs Indexed" },
+    { value: "1,600+", label: "Companies" },
+    { value: "8-Stage", label: "Pipeline" },
+    { value: "$310B+", label: "Market Covered" },
+  ];
+
   return (
-    <div style={{ background: T.navy, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Mono:wght@400;500&display=swap'); * { box-sizing: border-box; } body { margin: 0; }`}</style>
-      <div style={{ width: 400, padding: 40 }}>
-        {/* Logo */}
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <svg width="40" height="40" viewBox="0 0 28 28" fill="none" style={{ marginBottom: 12 }}>
-            <path d="M4 20 Q14 8 24 20" stroke={T.gold} strokeWidth="1.8" fill="none"/>
-            <path d="M14 6 L14 20" stroke={T.gold} strokeWidth="1.5"/>
-            <path d="M14 8 L20 14 L14 14 Z" fill={T.gold} opacity="0.7"/>
-            <path d="M4 20 Q14 24 24 20 L24 22 Q14 27 4 22 Z" fill={T.gold} opacity="0.4"/>
-            <path d="M1 22 L27 22" stroke={T.gold2} strokeWidth="0.8" opacity="0.5"/>
-          </svg>
-          <div style={{ color: T.gold, fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, letterSpacing: "0.04em" }}>GALLEON</div>
-          <div style={{ color: T.muted, fontSize: 12, marginTop: 6, fontFamily: "'DM Mono', monospace" }}>
-            {mode === "login" ? "Sign in to your account" : "Create your account"}
-          </div>
+    <div style={{ background: T.navy, minHeight: "100vh", color: T.cream2 }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Mono:wght@400;500&display=swap'); * { box-sizing: border-box; } body { margin: 0; } html { scroll-behavior: smooth; }`}</style>
+
+      {/* ── Hero ────────────────────────────────────────────────────────────── */}
+      <div style={{ ...sectionStyle, textAlign: "center", paddingTop: 80, paddingBottom: 40 }}>
+        <svg width="56" height="56" viewBox="0 0 28 28" fill="none" style={{ marginBottom: 20 }}>
+          <path d="M4 20 Q14 8 24 20" stroke={T.gold} strokeWidth="1.8" fill="none"/>
+          <path d="M14 6 L14 20" stroke={T.gold} strokeWidth="1.5"/>
+          <path d="M14 8 L20 14 L14 14 Z" fill={T.gold} opacity="0.7"/>
+          <path d="M4 20 Q14 24 24 20 L24 22 Q14 27 4 22 Z" fill={T.gold} opacity="0.4"/>
+          <path d="M1 22 L27 22" stroke={T.gold2} strokeWidth="0.8" opacity="0.5"/>
+        </svg>
+        <div style={{ color: T.gold, ...headingFont, fontSize: 36, fontWeight: 700, letterSpacing: "0.06em", marginBottom: 16 }}>GALLEON</div>
+        <div style={{ color: T.cream2, ...headingFont, fontSize: 20, fontWeight: 600, maxWidth: 600, margin: "0 auto 16px", lineHeight: 1.5 }}>
+          Provenance-Aware Credit Intelligence for BDC Portfolios
         </div>
+        <div style={{ color: T.muted, ...monoFont, fontSize: 13, maxWidth: 540, margin: "0 auto 32px", lineHeight: 1.7 }}>
+          The private credit market manages over $1.7 trillion in assets, yet analysts still spend 60-70% of their time
+          manually extracting data from scattered documents. Galleon changes that.
+        </div>
+        <button onClick={scrollToAuth} style={{
+          background: T.gold, color: T.navy, border: "none", borderRadius: 6, padding: "12px 36px",
+          fontSize: 13, fontWeight: 700, cursor: "pointer", ...monoFont, letterSpacing: "0.06em",
+        }}>
+          GET STARTED
+        </button>
+      </div>
 
-        {error && (
-          <div style={{ background: `${T.red}15`, border: `1px solid ${T.red}44`, borderRadius: 6, padding: "8px 14px", marginBottom: 16, color: T.red, fontSize: 12, fontFamily: "'DM Mono', monospace" }}>
-            {error}
+      {/* ── Gold divider ──────────────────────────────────────────────────── */}
+      <div style={{ height: 1, background: `linear-gradient(to right, transparent 10%, ${T.gold}44 50%, transparent 90%)` }} />
+
+      {/* ── Problem Section ────────────────────────────────────────────────── */}
+      <div style={sectionStyle}>
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <div style={{ color: T.gold, ...monoFont, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: 8 }}>The Problem</div>
+          <div style={{ color: T.cream, ...headingFont, fontSize: 22, fontWeight: 700 }}>Private Credit's Data Infrastructure Gap</div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+          {problemCards.map(c => (
+            <div key={c.title} style={{ background: T.navy2, border: `1px solid ${T.border}`, borderRadius: 8, padding: 24 }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" style={{ marginBottom: 12 }}>
+                <path d={c.icon} stroke={T.gold} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <div style={{ color: T.cream, ...monoFont, fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{c.title}</div>
+              <div style={{ color: T.muted, ...monoFont, fontSize: 11, lineHeight: 1.6 }}>{c.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Capabilities Grid ─────────────────────────────────────────────── */}
+      <div style={{ ...sectionStyle, background: T.navy2 }}>
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <div style={{ color: T.gold, ...monoFont, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: 8 }}>Platform</div>
+          <div style={{ color: T.cream, ...headingFont, fontSize: 22, fontWeight: 700 }}>What Galleon Does</div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+          {capabilities.map(c => (
+            <div key={c.title} style={{ display: "flex", gap: 14, alignItems: "flex-start", background: T.navy, border: `1px solid ${T.border}`, borderRadius: 8, padding: 18 }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, marginTop: 2 }}>
+                <path d={c.icon} stroke={T.gold} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <div>
+                <div style={{ color: T.cream, ...monoFont, fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{c.title}</div>
+                <div style={{ color: T.muted, ...monoFont, fontSize: 11, lineHeight: 1.5 }}>{c.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Stats Bar ─────────────────────────────────────────────────────── */}
+      <div style={{ background: T.navy, borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ maxWidth: 1000, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 0, padding: "28px 24px" }}>
+          {stats.map((s, i) => (
+            <div key={s.label} style={{ textAlign: "center", borderRight: i < 3 ? `1px solid ${T.border}` : "none" }}>
+              <div style={{ color: T.gold, ...headingFont, fontSize: 26, fontWeight: 700, marginBottom: 4 }}>{s.value}</div>
+              <div style={{ color: T.muted, ...monoFont, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em" }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Auth Form ─────────────────────────────────────────────────────── */}
+      <div ref={authFormRef} style={{ ...sectionStyle, paddingTop: 48, paddingBottom: 80 }}>
+        <div style={{ maxWidth: 400, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <div style={{ color: T.gold, ...headingFont, fontSize: 22, fontWeight: 700, marginBottom: 6 }}>
+              {mode === "login" ? "Sign In" : "Create Account"}
+            </div>
+            <div style={{ color: T.muted, ...monoFont, fontSize: 11 }}>
+              {mode === "login" ? "Welcome back to Galleon" : "Start your free account"}
+            </div>
           </div>
-        )}
 
-        <form onSubmit={handleSubmit}>
-          {mode === "signup" && (
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ display: "block", color: T.muted, fontSize: 10, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace" }}>Name</label>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" style={inputStyle} />
+          {error && (
+            <div style={{ background: `${T.red}15`, border: `1px solid ${T.red}44`, borderRadius: 6, padding: "8px 14px", marginBottom: 16, color: T.red, fontSize: 12, ...monoFont }}>
+              {error}
             </div>
           )}
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ display: "block", color: T.muted, fontSize: 10, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace" }}>Email</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required style={inputStyle} />
-          </div>
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: "block", color: T.muted, fontSize: 10, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace" }}>Password</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min 6 characters" required minLength={6} style={inputStyle} />
-          </div>
-          <button type="submit" disabled={loading} style={{
-            width: "100%", padding: "11px 0", background: T.gold, color: T.navy, border: "none",
-            borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer",
-            fontFamily: "'DM Mono', monospace", letterSpacing: "0.05em", opacity: loading ? 0.7 : 1,
-          }}>
-            {loading ? "..." : mode === "login" ? "SIGN IN" : "CREATE ACCOUNT"}
-          </button>
-        </form>
 
-        {/* Google OAuth */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0" }}>
-          <div style={{ flex: 1, height: 1, background: T.border }} />
-          <span style={{ color: T.muted, fontSize: 10, fontFamily: "'DM Mono', monospace" }}>OR</span>
-          <div style={{ flex: 1, height: 1, background: T.border }} />
-        </div>
-        <button onClick={handleGoogle} style={{
-          width: "100%", padding: "10px 0", background: "transparent", color: T.cream2,
-          border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, cursor: "pointer",
-          fontFamily: "'DM Mono', monospace",
-        }}>
-          Sign in with Google
-        </button>
-
-        {/* Toggle */}
-        <div style={{ textAlign: "center", marginTop: 24, fontSize: 12, color: T.muted, fontFamily: "'DM Mono', monospace" }}>
-          {mode === "login" ? "Don't have an account? " : "Already have an account? "}
-          <span onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}
-            style={{ color: T.gold, cursor: "pointer", textDecoration: "underline" }}>
-            {mode === "login" ? "Sign up" : "Sign in"}
-          </span>
-        </div>
-
-        {/* Pricing teaser */}
-        <div style={{ marginTop: 32, background: T.navy2, border: `1px solid ${T.border}`, borderRadius: 8, padding: 16 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: T.gold, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 10, fontFamily: "'DM Mono', monospace" }}>Plans</div>
-          <div style={{ display: "flex", gap: 10 }}>
-            {[
-              { plan: "Free", price: "$0", desc: "1 seat, 25 gen/mo" },
-              { plan: "Pro", price: "$500", desc: "1-4 seats, 500 gen/seat" },
-              { plan: "Enterprise", price: "Custom", desc: "Up to 20 seats" },
-            ].map(p => (
-              <div key={p.plan} style={{ flex: 1, padding: "8px 10px", background: T.navy3, borderRadius: 6, textAlign: "center" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.cream, fontFamily: "'DM Mono', monospace" }}>{p.plan}</div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: T.gold, fontFamily: "'Playfair Display', serif", margin: "4px 0" }}>{p.price}</div>
-                <div style={{ fontSize: 9, color: T.muted, fontFamily: "'DM Mono', monospace" }}>{p.desc}</div>
+          <form onSubmit={handleSubmit}>
+            {mode === "signup" && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: "block", color: T.muted, fontSize: 10, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.1em", ...monoFont }}>Name</label>
+                <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" style={inputStyle} />
               </div>
-            ))}
+            )}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: "block", color: T.muted, fontSize: 10, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.1em", ...monoFont }}>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", color: T.muted, fontSize: 10, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.1em", ...monoFont }}>Password</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min 6 characters" required minLength={6} style={inputStyle} />
+            </div>
+            <button type="submit" disabled={loading} style={{
+              width: "100%", padding: "11px 0", background: T.gold, color: T.navy, border: "none",
+              borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer",
+              ...monoFont, letterSpacing: "0.05em", opacity: loading ? 0.7 : 1,
+            }}>
+              {loading ? "..." : mode === "login" ? "SIGN IN" : "CREATE ACCOUNT"}
+            </button>
+          </form>
+
+          {/* Google OAuth */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0" }}>
+            <div style={{ flex: 1, height: 1, background: T.border }} />
+            <span style={{ color: T.muted, fontSize: 10, ...monoFont }}>OR</span>
+            <div style={{ flex: 1, height: 1, background: T.border }} />
+          </div>
+          <button onClick={handleGoogle} style={{
+            width: "100%", padding: "10px 0", background: "transparent", color: T.cream2,
+            border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, cursor: "pointer", ...monoFont,
+          }}>
+            Sign in with Google
+          </button>
+
+          {/* Toggle */}
+          <div style={{ textAlign: "center", marginTop: 24, fontSize: 12, color: T.muted, ...monoFont }}>
+            {mode === "login" ? "Don't have an account? " : "Already have an account? "}
+            <span onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}
+              style={{ color: T.gold, cursor: "pointer", textDecoration: "underline" }}>
+              {mode === "login" ? "Sign up" : "Sign in"}
+            </span>
+          </div>
+
+          {/* Pricing teaser */}
+          <div style={{ marginTop: 32, background: T.navy2, border: `1px solid ${T.border}`, borderRadius: 8, padding: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.gold, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 10, ...monoFont }}>Plans</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              {[
+                { plan: "Free", price: "$0", desc: "1 seat, 25 gen/mo" },
+                { plan: "Pro", price: "$500", desc: "1-4 seats, 500 gen/seat" },
+                { plan: "Enterprise", price: "Custom", desc: "Up to 20 seats" },
+              ].map(p => (
+                <div key={p.plan} style={{ flex: 1, padding: "8px 10px", background: T.navy3, borderRadius: 6, textAlign: "center" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.cream, ...monoFont }}>{p.plan}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: T.gold, ...headingFont, margin: "4px 0" }}>{p.price}</div>
+                  <div style={{ fontSize: 9, color: T.muted, ...monoFont }}>{p.desc}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -1764,6 +1870,7 @@ export default function App() {
     { id:"conflicts", label:"Conflicts"      },
     { id:"validation",label:"Validation Lab" },
     { id:"research",  label:"Research"       },
+    { id:"about",     label:"About"          },
   ];
 
   const S = {
@@ -3466,6 +3573,208 @@ export default function App() {
     );
   };
 
+  // ── About Tab ──────────────────────────────────────────────────────────────
+  const renderAbout = () => {
+    const headingFont = { fontFamily: "'Playfair Display', serif" };
+    const monoFont = { fontFamily: "'DM Mono', monospace" };
+    const sectionCard = { background: T.navy2, border: `1px solid ${T.border}`, borderRadius: 8, padding: isMobile ? 18 : 28, marginBottom: 24 };
+    const sectionTitle = (label, title) => (
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ color: T.gold, ...monoFont, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: 6 }}>{label}</div>
+        <div style={{ color: T.cream, ...headingFont, fontSize: 20, fontWeight: 700 }}>{title}</div>
+      </div>
+    );
+
+    const allCapabilities = [
+      { cat: "Document Intelligence", items: [
+        { name: "PDF Extraction", desc: "8-stage pipeline: ingest, parse, classify, extract, validate, enrich, normalize, store" },
+        { name: "LLM Enrichment", desc: "Claude-powered extraction of covenants, waterfall terms, and amendment details" },
+        { name: "XBRL Parsing", desc: "Structured financial data from SEC EDGAR filings with multi-filing support" },
+        { name: "Field Schema", desc: "65+ standardized fields across identity, financial, credit, deal, and operational categories" },
+      ]},
+      { cat: "Cross-Portfolio Analysis", items: [
+        { name: "Cross-BDC References", desc: "Identify companies held across multiple BDC portfolios with valuation comparisons" },
+        { name: "Temporal Tracking", desc: "Track fair value, spread, and covenant changes over quarterly snapshots" },
+        { name: "Concentration Limits", desc: "Monitor sector, single-name, and geographic concentration against policy thresholds" },
+        { name: "Early Warnings", desc: "Automated alerts for valuation drops, non-accrual triggers, and covenant breaches" },
+      ]},
+      { cat: "Workflow & Monitoring", items: [
+        { name: "EDGAR Monitor", desc: "Background daemon polling SEC for new filings with diff-based change detection" },
+        { name: "Deal Workflow", desc: "Kanban-style deal reviews with status tracking and team comments" },
+        { name: "AI Assistant", desc: "Natural language interface for portfolio queries, powered by Claude" },
+        { name: "Team Management", desc: "Role-based access, invite system, and per-seat usage tracking" },
+      ]},
+    ];
+
+    const competitors = [
+      { name: "Galleon", doc: "Automated (8-stage + LLM)", crossRef: "Full cross-BDC", temporal: "Built-in", pricing: "From $0", focus: "BDC-native" },
+      { name: "Moody's Analytics", doc: "Manual + templates", crossRef: "Limited", temporal: "Quarterly reports", pricing: "$50K+/yr", focus: "Broad credit" },
+      { name: "S&P Capital IQ", doc: "Manual entry", crossRef: "None", temporal: "Historical DB", pricing: "$25K+/yr", focus: "Public markets" },
+      { name: "PitchBook", doc: "Manual + scraped", crossRef: "Partial", temporal: "Deal-level", pricing: "$30K+/yr", focus: "PE/VC" },
+    ];
+
+    const archSteps = [
+      { label: "Documents", sub: "10-Ks, Credit Agreements, Amendments", color: T.muted2 },
+      { label: "Pipeline", sub: "8-Stage Extraction + LLM", color: T.gold },
+      { label: "Intelligence", sub: "Cross-Ref, Temporal, Alerts", color: T.blue },
+      { label: "Workspace", sub: "Dashboard, Workflow, Assistant", color: T.green },
+    ];
+
+    return (
+      <div style={{ maxWidth: 900, margin: "0 auto" }}>
+        {/* Founder Story */}
+        <div style={sectionCard}>
+          {sectionTitle("Origin", "The Galleon Story")}
+          <div style={{ color: T.cream2, ...monoFont, fontSize: 12, lineHeight: 1.8, marginBottom: 16 }}>
+            Galleon was created by a Wall Street veteran who saw the gap in private credit data infrastructure.
+            After years of watching analysts spend 60-70% of their time manually extracting data from scattered
+            documents, he built the platform the industry needed.
+          </div>
+          <div style={{ color: T.muted, ...monoFont, fontSize: 11, lineHeight: 1.7 }}>
+            The name "Galleon" reflects the mission: just as galleons once carried the world's most valuable cargo
+            across uncharted waters, this platform navigates the complex seas of private credit data to deliver
+            actionable intelligence to those who need it most.
+          </div>
+        </div>
+
+        {/* The Problem */}
+        <div style={sectionCard}>
+          {sectionTitle("The Problem", "Private Credit's Data Crisis")}
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {[
+              "The $1.7 trillion private credit market is experiencing explosive growth, yet its data infrastructure remains stuck in the past. Portfolio companies' financial data is trapped across 10-Ks, credit agreements, amendments, and internal systems with no single source of truth.",
+              "Analysts at BDCs and CLO managers spend the majority of their time on manual data extraction rather than making investment decisions. When a portfolio company appears across multiple BDC portfolios, there's no way to compare how different holders value the same asset or track how terms change over time.",
+              "Existing solutions from traditional credit agencies weren't built for this market. They focus on public credit ratings and broadly syndicated loans, leaving the middle-market private credit space — where Galleon operates — largely unserved."
+            ].map((p, i) => (
+              <div key={i} style={{ color: T.cream2, ...monoFont, fontSize: 12, lineHeight: 1.7, paddingLeft: 14, borderLeft: `2px solid ${T.gold}33` }}>{p}</div>
+            ))}
+          </div>
+        </div>
+
+        {/* Architecture Flow */}
+        <div style={sectionCard}>
+          {sectionTitle("Architecture", "How It Works")}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(4, 1fr)", gap: 12 }}>
+            {archSteps.map((s, i) => (
+              <React.Fragment key={s.label}>
+                <div style={{ background: T.navy, border: `1px solid ${T.border}`, borderRadius: 8, padding: 16, textAlign: "center", borderTop: `3px solid ${s.color}` }}>
+                  <div style={{ color: T.cream, ...monoFont, fontSize: 12, fontWeight: 700, marginBottom: 6 }}>{s.label}</div>
+                  <div style={{ color: T.muted, ...monoFont, fontSize: 10, lineHeight: 1.5 }}>{s.sub}</div>
+                </div>
+              </React.Fragment>
+            ))}
+          </div>
+          <div style={{ display: isMobile ? "none" : "flex", justifyContent: "center", margin: "-6px 0 8px", gap: 4 }}>
+            {[0,1,2].map(i => (
+              <div key={i} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ color: T.gold, fontSize: 16, ...monoFont }}>→</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Capabilities Table */}
+        <div style={sectionCard}>
+          {sectionTitle("Platform", "Full Capabilities")}
+          {allCapabilities.map(cat => (
+            <div key={cat.cat} style={{ marginBottom: 20 }}>
+              <div style={{ color: T.gold, ...monoFont, fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>{cat.cat}</div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+                {cat.items.map(it => (
+                  <div key={it.name} style={{ background: T.navy, border: `1px solid ${T.border}`, borderRadius: 6, padding: 14 }}>
+                    <div style={{ color: T.cream, ...monoFont, fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{it.name}</div>
+                    <div style={{ color: T.muted, ...monoFont, fontSize: 10, lineHeight: 1.5 }}>{it.desc}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Market Stats */}
+        <div style={sectionCard}>
+          {sectionTitle("Market", "The Opportunity")}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 14 }}>
+            {[
+              { value: "$310B+", label: "BDC AUM" },
+              { value: "$1.7T", label: "Private Credit" },
+              { value: "$12B", label: "TAM" },
+              { value: "25+", label: "BDCs Indexed" },
+            ].map(s => (
+              <div key={s.label} style={{ background: T.navy, border: `1px solid ${T.border}`, borderRadius: 8, padding: 16, textAlign: "center" }}>
+                <div style={{ color: T.gold, ...headingFont, fontSize: 22, fontWeight: 700, marginBottom: 4 }}>{s.value}</div>
+                <div style={{ color: T.muted, ...monoFont, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em" }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Competitive Landscape */}
+        <div style={sectionCard}>
+          {sectionTitle("Landscape", "Galleon vs. Incumbents")}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", ...monoFont, fontSize: 11 }}>
+              <thead>
+                <tr>
+                  {["Platform", "Doc Extraction", "Cross-Ref", "Temporal", "Pricing", "Focus"].map(h => (
+                    <th key={h} style={{ textAlign: "left", padding: "8px 10px", borderBottom: `1px solid ${T.border}`, color: T.muted, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {competitors.map(c => (
+                  <tr key={c.name}>
+                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.navy3}`, color: c.name === "Galleon" ? T.gold : T.cream, fontWeight: c.name === "Galleon" ? 700 : 400 }}>{c.name}</td>
+                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.navy3}`, color: T.cream2 }}>{c.doc}</td>
+                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.navy3}`, color: T.cream2 }}>{c.crossRef}</td>
+                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.navy3}`, color: T.cream2 }}>{c.temporal}</td>
+                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.navy3}`, color: c.name === "Galleon" ? T.green : T.cream2 }}>{c.pricing}</td>
+                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.navy3}`, color: T.cream2 }}>{c.focus}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Pricing */}
+        <div style={sectionCard}>
+          {sectionTitle("Pricing", "Simple, Transparent Plans")}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 14 }}>
+            {[
+              { plan: "Free", price: "$0", period: "forever", features: ["1 seat", "25 generations/mo", "BDC index access", "Basic search"], highlight: false },
+              { plan: "Pro", price: "$500", period: "/seat/mo", features: ["1-4 seats", "500 generations/seat", "LLM extraction", "EDGAR monitor", "Full API access"], highlight: true },
+              { plan: "Enterprise", price: "Custom", period: "contact us", features: ["Up to 20 seats", "Unlimited generations", "Priority support", "Custom integrations", "SSO & compliance"], highlight: false },
+            ].map(p => (
+              <div key={p.plan} style={{ background: T.navy, border: `1px solid ${p.highlight ? T.gold : T.border}`, borderRadius: 8, padding: 22, textAlign: "center", position: "relative" }}>
+                {p.highlight && <div style={{ position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)", background: T.gold, color: T.navy, ...monoFont, fontSize: 9, fontWeight: 700, padding: "2px 12px", borderRadius: 10, letterSpacing: "0.08em" }}>POPULAR</div>}
+                <div style={{ color: T.cream, ...monoFont, fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{p.plan}</div>
+                <div style={{ color: T.gold, ...headingFont, fontSize: 28, fontWeight: 700 }}>{p.price}</div>
+                <div style={{ color: T.muted, ...monoFont, fontSize: 10, marginBottom: 16 }}>{p.period}</div>
+                {p.features.map(f => (
+                  <div key={f} style={{ color: T.cream2, ...monoFont, fontSize: 11, padding: "4px 0", borderTop: `1px solid ${T.navy3}` }}>{f}</div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Tech Stack */}
+        <div style={sectionCard}>
+          {sectionTitle("Technology", "Built With")}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {[
+              "Python 3.11", "FastAPI", "React 18", "SQLite (WAL)", "Claude AI (Haiku)",
+              "SEC EDGAR API", "XBRL Parser", "Docker", "JWT Auth", "bcrypt",
+            ].map(t => (
+              <div key={t} style={{ background: T.navy, border: `1px solid ${T.border}`, borderRadius: 6, padding: "8px 16px", color: T.cream2, ...monoFont, fontSize: 11 }}>{t}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderContent = () => {
     if (tab==="dashboard")  return renderDashboard();
     if (tab==="crossref")   return renderCrossRef();
@@ -3478,6 +3787,7 @@ export default function App() {
     if (tab==="validation") return renderValidation();
     if (tab==="research")   return renderResearch();
     if (tab==="workflow")   return renderWorkflow();
+    if (tab==="about")      return renderAbout();
   };
 
   const apiOnline = apiStatus?.status === "ok";
