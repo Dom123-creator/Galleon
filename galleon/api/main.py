@@ -144,6 +144,38 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
+
+# ── Rate Limiter ─────────────────────────────────────────────────────────────
+
+import time
+from collections import defaultdict
+
+_rate_buckets: Dict[str, List[float]] = defaultdict(list)
+_rate_lock = __import__("threading").Lock()
+
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+def _rate_limit(key: str, max_requests: int, window_seconds: int = 60):
+    """Raise 429 if key exceeds max_requests within window_seconds."""
+    now = time.time()
+    cutoff = now - window_seconds
+    with _rate_lock:
+        bucket = _rate_buckets[key]
+        # Prune old entries
+        _rate_buckets[key] = [t for t in bucket if t > cutoff]
+        if len(_rate_buckets[key]) >= max_requests:
+            raise HTTPException(status_code=429, detail="Too many requests — try again later")
+        _rate_buckets[key].append(now)
+
+
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 # ── Startup ───────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
@@ -503,8 +535,9 @@ def health():
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 @app.post("/auth/register", response_model=AuthTokenOut, tags=["auth"])
-def auth_register(body: RegisterIn):
+def auth_register(body: RegisterIn, request: Request):
     """Create a new user + org, return JWT."""
+    _rate_limit(f"register:{_get_client_ip(request)}", max_requests=5, window_seconds=300)
     existing = sqlite_store.get_user_by_email(body.email)
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -528,8 +561,9 @@ def auth_register(body: RegisterIn):
 
 
 @app.post("/auth/login", response_model=AuthTokenOut, tags=["auth"])
-def auth_login(body: LoginIn):
+def auth_login(body: LoginIn, request: Request):
     """Login with email + password, return JWT."""
+    _rate_limit(f"login:{_get_client_ip(request)}", max_requests=5, window_seconds=60)
     user = sqlite_store.get_user_by_email(body.email)
     if not user or not user.get("password_hash"):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -670,9 +704,20 @@ async def billing_webhook(request: Request):
         plan = data.get("metadata", {}).get("plan", "pro")
         seats = int(data.get("metadata", {}).get("seats", "1"))
         if org_id:
+            # Verify org exists and customer matches (prevent org_id spoofing)
+            org = sqlite_store.get_org(org_id)
+            if not org:
+                print(f"[billing] Webhook for unknown org_id: {org_id}")
+                return {"status": "ignored"}
+            customer_id = data.get("customer")
+            if org.get("stripe_customer_id") and org["stripe_customer_id"] != customer_id:
+                print(f"[billing] Customer mismatch for org {org_id}: expected {org.get('stripe_customer_id')}, got {customer_id}")
+                return {"status": "ignored"}
+            # Clamp seats to plan limits
+            seats = max(1, min(seats, 20))
             sqlite_store.update_org(org_id, {
                 "plan": plan, "seats": seats,
-                "stripe_customer_id": data.get("customer"),
+                "stripe_customer_id": customer_id,
                 "stripe_subscription_id": data.get("subscription"),
             })
     elif etype == "customer.subscription.updated":
@@ -1027,11 +1072,15 @@ async def upload_document(
     # Check usage limits
     _check_and_track_usage(current_user, "upload")
 
+    # Read file with size limit
+    content = await file.read(MAX_UPLOAD_SIZE + 1)
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail=f"File too large — maximum {MAX_UPLOAD_SIZE // (1024*1024)}MB")
+
     # Save file
     safe_name = Path(file.filename).name
     stored_name = f"{uuid.uuid4()}_{safe_name}"
     dest = UPLOADS_DIR / stored_name
-    content = await file.read()
     dest.write_bytes(content)
 
     # Entity resolution
