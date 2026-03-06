@@ -476,12 +476,12 @@ class DealReview(BaseModel):
 
 
 class DealReviewCreate(BaseModel):
-    company_name: str
-    company_id: Optional[str] = None
-    assignee: Optional[str] = None
-    assignee_id: Optional[str] = None
-    notes: Optional[str] = None
-    priority: str = "medium"
+    company_name: str = Field(..., max_length=200)
+    company_id: Optional[str] = Field(None, max_length=64)
+    assignee: Optional[str] = Field(None, max_length=100)
+    assignee_id: Optional[str] = Field(None, max_length=64)
+    notes: Optional[str] = Field(None, max_length=5000)
+    priority: str = Field("medium", pattern=r"^(low|medium|high|urgent)$")
 
 
 class DealReviewUpdate(BaseModel):
@@ -547,6 +547,7 @@ class LoginIn(BaseModel):
 
 class GoogleAuthIn(BaseModel):
     code: str = Field(..., min_length=1, max_length=2048)
+    state: str = Field(..., min_length=1, max_length=256)
 
 
 class AuthTokenOut(BaseModel):
@@ -632,13 +633,13 @@ class TeamMemberOut(BaseModel):
 
 
 class RoleUpdate(BaseModel):
-    role: str
+    role: str = Field(..., pattern=r"^(member|admin|owner)$")
 
 
 # ── Comments ────────────────────────────────────────────────────────────────
 
 class CommentCreate(BaseModel):
-    body: str
+    body: str = Field(..., min_length=1, max_length=5000)
 
 
 class CommentOut(BaseModel):

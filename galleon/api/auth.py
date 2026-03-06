@@ -110,14 +110,29 @@ async def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]
 
 # ── Google OAuth ──────────────────────────────────────────────────────────────
 
+import secrets
+import time as _time
+
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
+# In-memory store for OAuth state tokens (state -> expiry timestamp)
+_oauth_states: Dict[str, float] = {}
+_OAUTH_STATE_TTL = 600  # 10 minutes
 
-def get_google_auth_url() -> Optional[str]:
+
+def get_google_auth_url() -> Optional[tuple]:
+    """Return (url, state) tuple or None if not configured."""
     if not GOOGLE_CLIENT_ID:
         return None
+    state = secrets.token_urlsafe(32)
+    _oauth_states[state] = _time.time() + _OAUTH_STATE_TTL
+    # Prune expired states
+    now = _time.time()
+    expired = [k for k, v in _oauth_states.items() if v < now]
+    for k in expired:
+        _oauth_states.pop(k, None)
     params = {
         "client_id": GOOGLE_CLIENT_ID,
         "redirect_uri": GOOGLE_REDIRECT_URI,
@@ -125,9 +140,18 @@ def get_google_auth_url() -> Optional[str]:
         "scope": "openid email profile",
         "access_type": "offline",
         "prompt": "consent",
+        "state": state,
     }
     qs = "&".join(f"{k}={v}" for k, v in params.items())
-    return f"{GOOGLE_AUTH_URL}?{qs}"
+    return f"{GOOGLE_AUTH_URL}?{qs}", state
+
+
+def verify_oauth_state(state: str) -> bool:
+    """Verify and consume an OAuth state token."""
+    expiry = _oauth_states.pop(state, None)
+    if expiry is None:
+        return False
+    return _time.time() < expiry
 
 
 async def exchange_google_code(code: str) -> Optional[Dict[str, Any]]:

@@ -619,6 +619,12 @@ def save_invite(invite: Dict) -> None:
         conn.commit()
 
 
+def get_invite(invite_id: str) -> Optional[Dict]:
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM invites WHERE id = ?", (invite_id,)).fetchone()
+    return dict(row) if row else None
+
+
 def get_invite_by_token(token: str) -> Optional[Dict]:
     conn = _get_conn()
     row = conn.execute("SELECT * FROM invites WHERE token = ?", (token,)).fetchone()
@@ -814,7 +820,7 @@ def cleanup_stale_data(
     """
     conn = _get_conn()
     counts: Dict[str, int] = {}
-    with _write_lock:
+    with _lock:
         try:
             conn.execute("BEGIN IMMEDIATE")
             # Expired sessions

@@ -23,7 +23,7 @@ logger = logging.getLogger("galleon.api")
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -37,6 +37,7 @@ from .auth import (
     get_current_user_optional,
     get_google_auth_url,
     get_usage_info,
+    verify_oauth_state,
     hash_password,
     verify_password,
 )
@@ -181,6 +182,7 @@ async def security_and_request_id(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com"
     if _ENVIRONMENT == "production":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -195,6 +197,7 @@ _rate_buckets: Dict[str, List[float]] = defaultdict(list)
 _rate_lock = __import__("threading").Lock()
 
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".xlsx", ".xls", ".docx", ".doc", ".csv", ".txt"}
 
 
 def _rate_limit(key: str, max_requests: int, window_seconds: int = 60):
@@ -647,8 +650,11 @@ def auth_me(current_user: dict = Depends(get_current_user)):
 
 
 @app.post("/auth/google", response_model=AuthTokenOut, tags=["auth"])
-async def auth_google(body: GoogleAuthIn):
+async def auth_google(body: GoogleAuthIn, request: Request):
     """Exchange Google auth code for JWT."""
+    _rate_limit(f"google:{_get_client_ip(request)}", max_requests=10, window_seconds=60)
+    if not verify_oauth_state(body.state):
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
     profile = await exchange_google_code(body.code)
     if not profile or not profile.get("email"):
         raise HTTPException(status_code=400, detail="Google authentication failed")
@@ -683,11 +689,12 @@ async def auth_google(body: GoogleAuthIn):
 
 @app.get("/auth/google/url", tags=["auth"])
 def auth_google_url():
-    """Return Google OAuth redirect URL."""
-    url = get_google_auth_url()
-    if not url:
+    """Return Google OAuth redirect URL with CSRF state."""
+    result = get_google_auth_url()
+    if not result:
         raise HTTPException(status_code=501, detail="Google OAuth not configured")
-    return {"url": url}
+    url, state = result
+    return {"url": url, "state": state}
 
 
 # ── Billing / Stripe ─────────────────────────────────────────────────────────
@@ -940,7 +947,7 @@ def create_company(body: CompanyCreate, current_user: dict = Depends(get_current
 
 
 @app.get("/companies/search", response_model=List[CompanySearchResult], tags=["companies"])
-def search_companies(q: str = "", limit: int = 10, current_user: dict = Depends(get_current_user)):
+def search_companies(q: str = "", limit: int = Query(10, ge=1, le=200), current_user: dict = Depends(get_current_user)):
     """
     Fuzzy search the BDC universe by company name.
     Returns EDGAR-sourced loan terms for matched portfolio companies.
@@ -1121,6 +1128,11 @@ async def upload_document(
     """
     # Check usage limits
     _check_and_track_usage(current_user, "upload")
+
+    # Validate file type
+    ext = Path(file.filename).suffix.lower() if file.filename else ""
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"File type '{ext}' not allowed. Accepted: {', '.join(sorted(ALLOWED_UPLOAD_EXTENSIONS))}")
 
     # Read file with size limit
     content = await file.read(MAX_UPLOAD_SIZE + 1)
@@ -1543,7 +1555,7 @@ def get_bdc_universe(current_user: dict = Depends(get_current_user)):
 
 
 @app.post("/bdc/index", tags=["bdc"])
-def trigger_bdc_index(background_tasks: BackgroundTasks, max_bdcs: int = 25, current_user: dict = Depends(get_current_user)):
+def trigger_bdc_index(background_tasks: BackgroundTasks, max_bdcs: int = Query(25, ge=1, le=50), current_user: dict = Depends(get_current_user)):
     """Trigger a background BDC universe index build. Returns {pipeline_id}."""
     pipeline_id = str(uuid.uuid4())
     _pipelines[pipeline_id] = {
@@ -1563,7 +1575,7 @@ def trigger_bdc_index(background_tasks: BackgroundTasks, max_bdcs: int = 25, cur
 # ── FDIC ───────────────────────────────────────────────────────────────────────
 
 @app.get("/fdic/institutions", response_model=List[FdicInstitutionOut], tags=["fdic"])
-def search_fdic_institutions(q: str = "", limit: int = 10, current_user: dict = Depends(get_current_user)):
+def search_fdic_institutions(q: str = "", limit: int = Query(10, ge=1, le=200), current_user: dict = Depends(get_current_user)):
     """Search FDIC for bank institutions by name."""
     if not q.strip():
         return []
@@ -1577,7 +1589,7 @@ def search_fdic_institutions(q: str = "", limit: int = 10, current_user: dict = 
 
 
 @app.get("/fdic/financials/{cert}", response_model=List[FdicFinancialsOut], tags=["fdic"])
-def get_fdic_financials(cert: str, limit: int = 4, current_user: dict = Depends(get_current_user)):
+def get_fdic_financials(cert: str, limit: int = Query(4, ge=1, le=200), current_user: dict = Depends(get_current_user)):
     """Get quarterly financials for a bank by FDIC certificate number."""
     try:
         from clients.fdic_client import get_financials  # type: ignore
@@ -1589,7 +1601,7 @@ def get_fdic_financials(cert: str, limit: int = 4, current_user: dict = Depends(
 
 
 @app.get("/fdic/failures", response_model=List[FdicFailureOut], tags=["fdic"])
-def search_fdic_failures(q: str = "", limit: int = 10, current_user: dict = Depends(get_current_user)):
+def search_fdic_failures(q: str = "", limit: int = Query(10, ge=1, le=200), current_user: dict = Depends(get_current_user)):
     """Search FDIC failed bank list."""
     if not q.strip():
         return []
@@ -1605,7 +1617,7 @@ def search_fdic_failures(q: str = "", limit: int = 10, current_user: dict = Depe
 # ── USASpending ────────────────────────────────────────────────────────────────
 
 @app.get("/usaspending/awards", response_model=List[UsaSpendingAwardOut], tags=["usaspending"])
-def search_usaspending_awards(q: str = "", award_type: Optional[str] = None, limit: int = 10, current_user: dict = Depends(get_current_user)):
+def search_usaspending_awards(q: str = "", award_type: Optional[str] = None, limit: int = Query(10, ge=1, le=200), current_user: dict = Depends(get_current_user)):
     """Search USASpending.gov for federal awards (contracts, grants, loans)."""
     if not q.strip():
         return []
@@ -1635,7 +1647,7 @@ def get_usaspending_recipient(name: str = "", current_user: dict = Depends(get_c
 # ── SBA ────────────────────────────────────────────────────────────────────────
 
 @app.get("/sba/loans", response_model=List[SbaLoanOut], tags=["sba"])
-def search_sba_loans(q: str = "", limit: int = 10, current_user: dict = Depends(get_current_user)):
+def search_sba_loans(q: str = "", limit: int = Query(10, ge=1, le=200), current_user: dict = Depends(get_current_user)):
     """Search SBA loan data by recipient name."""
     if not q.strip():
         return []
@@ -1651,7 +1663,7 @@ def search_sba_loans(q: str = "", limit: int = 10, current_user: dict = Depends(
 # ── OpenCorporates ─────────────────────────────────────────────────────────────
 
 @app.get("/opencorporates/companies", response_model=List[OpenCorpCompanyOut], tags=["opencorporates"])
-def search_opencorporates_companies(q: str = "", jurisdiction: Optional[str] = None, limit: int = 10, current_user: dict = Depends(get_current_user)):
+def search_opencorporates_companies(q: str = "", jurisdiction: Optional[str] = None, limit: int = Query(10, ge=1, le=200), current_user: dict = Depends(get_current_user)):
     """Search OpenCorporates for company registration data."""
     if not q.strip():
         return []
@@ -1665,7 +1677,7 @@ def search_opencorporates_companies(q: str = "", jurisdiction: Optional[str] = N
 
 
 @app.get("/opencorporates/officers", response_model=List[OpenCorpOfficerOut], tags=["opencorporates"])
-def search_opencorporates_officers(q: str = "", limit: int = 10, current_user: dict = Depends(get_current_user)):
+def search_opencorporates_officers(q: str = "", limit: int = Query(10, ge=1, le=200), current_user: dict = Depends(get_current_user)):
     """Search OpenCorporates for corporate officers/directors."""
     if not q.strip():
         return []
@@ -1681,7 +1693,7 @@ def search_opencorporates_officers(q: str = "", limit: int = 10, current_user: d
 # ── UCC ────────────────────────────────────────────────────────────────────────
 
 @app.get("/ucc/filings", response_model=List[UccFilingOut], tags=["ucc"])
-def search_ucc_filings_route(q: str = "", state: Optional[str] = None, limit: int = 10, current_user: dict = Depends(get_current_user)):
+def search_ucc_filings_route(q: str = "", state: Optional[str] = None, limit: int = Query(10, ge=1, le=200), current_user: dict = Depends(get_current_user)):
     """Search UCC filings and liens for an entity (aggregates EDGAR + OpenCorporates)."""
     if not q.strip():
         return []
@@ -1697,7 +1709,7 @@ def search_ucc_filings_route(q: str = "", state: Optional[str] = None, limit: in
 # ── Multi-Source Search ────────────────────────────────────────────────────────
 
 @app.get("/search/multi", response_model=MultiSourceSearchOut, tags=["search"])
-def multi_source_search(q: str = "", sources: Optional[str] = None, limit: int = 5, current_user: dict = Depends(get_current_user)):
+def multi_source_search(q: str = "", sources: Optional[str] = None, limit: int = Query(5, ge=1, le=200), current_user: dict = Depends(get_current_user)):
     """
     Search across multiple data sources simultaneously.
     sources: comma-separated list of sources to query (fdic,usaspending,opencorporates,ucc,bdc).
@@ -2144,7 +2156,7 @@ def _static_rules() -> List[RuleOut]:
 # ── Cross-Reference Graph ────────────────────────────────────────────────────
 
 @app.get("/bdc/cross-references", response_model=List[CrossRefCompany], tags=["bdc"])
-def get_cross_references(min_holders: int = 2, limit: int = 50, current_user: dict = Depends(get_current_user)):
+def get_cross_references(min_holders: int = 2, limit: int = Query(50, ge=1, le=200), current_user: dict = Depends(get_current_user)):
     """Return companies held by multiple BDCs, sorted by FV discrepancy."""
     try:
         from bdc_index import build_cross_references  # type: ignore
@@ -2253,7 +2265,7 @@ def monitor_status(current_user: dict = Depends(get_current_user)):
 
 
 @app.get("/monitor/alerts", response_model=List[FilingAlert], tags=["monitor"])
-def monitor_alerts(unread_only: bool = False, limit: int = 50, current_user: dict = Depends(get_current_user)):
+def monitor_alerts(unread_only: bool = False, limit: int = Query(50, ge=1, le=200), current_user: dict = Depends(get_current_user)):
     """Get filing alerts from EDGAR monitor."""
     try:
         from pipeline.edgar_monitor import get_alerts  # type: ignore
@@ -2309,7 +2321,7 @@ def list_deal_reviews(current_user: dict = Depends(get_current_user)):
         _seed_deal_reviews()
     org_id = current_user.get("org_id")
     reviews = sorted(
-        [r for r in _deal_reviews.values() if r.get("org_id") == org_id or not r.get("org_id")],
+        [r for r in _deal_reviews.values() if r.get("org_id") == org_id],
         key=lambda r: r["created_at"], reverse=True,
     )
     # Attach comment counts
@@ -2387,6 +2399,11 @@ def update_deal_review(review_id: str, body: DealReviewUpdate, current_user: dic
 @app.get("/workflow/reviews/{review_id}/comments", response_model=List[CommentOut], tags=["workflow"])
 def list_review_comments(review_id: str, current_user: dict = Depends(get_current_user)):
     """List comments on a deal review."""
+    review = _deal_reviews.get(review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    if review.get("org_id") and review["org_id"] != current_user.get("org_id"):
+        raise HTTPException(status_code=403, detail="Access denied")
     return [CommentOut(**c) for c in sqlite_store.list_comments_for_review(review_id)]
 
 
@@ -2396,6 +2413,8 @@ def post_review_comment(review_id: str, body: CommentCreate, current_user: dict 
     review = _deal_reviews.get(review_id)
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
+    if review.get("org_id") and review["org_id"] != current_user.get("org_id"):
+        raise HTTPException(status_code=403, detail="Access denied")
     user = sqlite_store.get_user_by_id(current_user["user_id"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -2523,6 +2542,11 @@ def list_invites(current_user: dict = Depends(get_current_user)):
 def revoke_invite(invite_id: str, current_user: dict = Depends(get_current_user)):
     """Revoke a pending invite."""
     _require_role(current_user, ["owner", "admin"])
+    invite = sqlite_store.get_invite(invite_id)
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    if invite.get("org_id") != current_user.get("org_id"):
+        raise HTTPException(status_code=403, detail="Access denied")
     sqlite_store.delete_invite(invite_id)
     return {"ok": True}
 
@@ -2577,7 +2601,7 @@ def accept_invite(body: InviteAcceptIn):
 # ── Activity Feed ────────────────────────────────────────────────────────────
 
 @app.get("/team/activity", response_model=List[ActivityOut], tags=["team"])
-def list_activity(limit: int = 50, offset: int = 0, current_user: dict = Depends(get_current_user)):
+def list_activity(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), current_user: dict = Depends(get_current_user)):
     """Org-wide activity feed (owner/admin)."""
     _require_role(current_user, ["owner", "admin"])
     activities = sqlite_store.list_org_activity(current_user["org_id"], limit=min(limit, 200), offset=offset)
@@ -2733,11 +2757,10 @@ if _UI_DIST.is_dir():
 @app.post("/admin/backup", tags=["admin"])
 async def create_backup(current_user: dict = Depends(get_current_user)):
     """Create a hot backup of the SQLite database (admin only)."""
-    if current_user.get("role") not in ("admin", "owner"):
-        raise HTTPException(status_code=403, detail="Admin access required")
+    _require_role(current_user, ["admin", "owner"])
     try:
-        path = sqlite_store.backup_db()
-        return {"status": "ok", "path": path}
+        sqlite_store.backup_db()
+        return {"status": "ok"}
     except Exception as exc:
         logger.error("Backup failed: %s", exc)
         raise HTTPException(status_code=500, detail="Backup failed")
@@ -2746,8 +2769,7 @@ async def create_backup(current_user: dict = Depends(get_current_user)):
 @app.post("/admin/cleanup", tags=["admin"])
 async def run_cleanup(current_user: dict = Depends(get_current_user)):
     """Delete expired sessions, old invites, and stale activity logs (admin only)."""
-    if current_user.get("role") not in ("admin", "owner"):
-        raise HTTPException(status_code=403, detail="Admin access required")
+    _require_role(current_user, ["admin", "owner"])
     try:
         counts = sqlite_store.cleanup_stale_data()
         return {"status": "ok", "deleted": counts}
